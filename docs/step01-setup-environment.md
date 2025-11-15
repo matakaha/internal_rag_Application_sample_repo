@@ -140,7 +140,7 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4
 
 # Azure AI Search 設定
 AZURE_SEARCH_ENDPOINT=https://your-search-service.search.windows.net
-AZURE_SEARCH_INDEX=documents-index
+AZURE_SEARCH_INDEX=redlist-index
 AZURE_SEARCH_KEY=  # ローカル開発時のみ(本番はManaged Identity使用)
 
 # アプリケーション設定
@@ -197,7 +197,7 @@ python scripts/test-azure-connection.py
 gh secret set AZURE_OPENAI_ENDPOINT -b "$OPENAI_ENDPOINT"
 gh secret set AZURE_OPENAI_DEPLOYMENT -b "gpt-4"
 gh secret set AZURE_SEARCH_ENDPOINT -b "$SEARCH_ENDPOINT"
-gh secret set AZURE_SEARCH_INDEX -b "documents-index"
+gh secret set AZURE_SEARCH_INDEX -b "redlist-index"
 ```
 
 #### GitHub Webで設定
@@ -220,7 +220,7 @@ az webapp config appsettings set `
         AZURE_OPENAI_ENDPOINT="$OPENAI_ENDPOINT" `
         AZURE_OPENAI_DEPLOYMENT="gpt-4" `
         AZURE_SEARCH_ENDPOINT="$SEARCH_ENDPOINT" `
-        AZURE_SEARCH_INDEX="documents-index"
+        AZURE_SEARCH_INDEX="redlist-index"
 
 # 設定確認
 az webapp config appsettings list `
@@ -325,4 +325,4 @@ az account set --subscription "<subscription-id>"
 
 環境準備が完了したら、次は **[Step 2: データ準備](step02-data-preparation.md)** に進みましょう。
 
-デジタル庁のオープンデータをダウンロードし、Blob Storageにアップロードします。
+e-Govデータポータルのレッドリスト(絶滅危惧種データ)をダウンロードし、Blob Storageにアップロードします。

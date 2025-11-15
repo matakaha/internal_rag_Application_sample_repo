@@ -1,26 +1,39 @@
 [
   {
     "id": 1,
-    "question": "デジタル庁の役割は何ですか?",
-    "expected_keywords": ["デジタル社会", "司令塔", "推進"],
+    "question": "イリオモテヤマネコは絶滅危惧種ですか?",
+    "expected_keywords": ["CR", "絶滅危惧IA類", "西表島"],
     "should_have_sources": true
   },
   {
     "id": 2,
-    "question": "マイナンバーカードとは何ですか?",
-    "expected_keywords": ["個人番号", "身分証明", "行政サービス"],
+    "question": "ライチョウの生息地はどこですか?",
+    "expected_keywords": ["日本アルプス", "高山帯", "鳥類"],
     "should_have_sources": true
   },
   {
     "id": 3,
-    "question": "デジタル庁はいつ設立されましたか?",
-    "expected_keywords": ["2021", "令和"],
+    "question": "コウノトリの現在の個体数は?",
+    "expected_keywords": ["300羽", "豊岡", "野生復帰"],
     "should_have_sources": true
   },
   {
     "id": 4,
+    "question": "淡水魚で絶滅危惧種に指定されているものは?",
+    "expected_keywords": ["アユモドキ", "CR", "汽水・淡水魚類"],
+    "should_have_sources": true
+  },
+  {
+    "id": 5,
+    "question": "準絶滅危惧(NT)に分類されている種は?",
+    "expected_keywords": ["オオタカ", "NT", "準絶滅危惧"],
+    "should_have_sources": true
+  },
+  {
+    "id": 6,
     "question": "今日の天気は?",
     "expected_keywords": ["情報", "ない", "わかりません"],
     "should_have_sources": false
   }
 ]
+

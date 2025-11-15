@@ -17,7 +17,7 @@
 - ✅ **Pythonベース**: Flask + Azure OpenAI + Azure AI Searchによるシンプルな実装
 - ✅ **CI/CD統合**: GitHub Actionsによる自動デプロイ
 - ✅ **教育向け**: ステップバイステップで理解できる構成
-- ✅ **実践的**: デジタル庁のオープンデータを活用したRAGシステム
+- ✅ **実践的**: 環境省レッドリスト(絶滅危惧種データ)を活用したRAGシステム
 
 ## 🏗️ アーキテクチャ
 
@@ -113,11 +113,11 @@ internal_rag_Application_sample_repo/
 
 ### [Step 2: データ準備](docs/step02-data-preparation.md)
 
-- デジタル庁のオープンデータダウンロード
+- e-Govデータポータルのレッドリストダウンロード
 - Blob Storageへのアップロード
 - データ形式の確認
 
-データソース: [デジタル庁 - データセット](https://www.digital.go.jp/resources/data_dataset)
+データソース: [e-Govデータポータル - レッドリスト/レッドデータブック](https://data.e-gov.go.jp/data/dataset/env_20140904_0456)
 
 ### [Step 3: AI Searchインデックス作成](docs/step03-indexing.md)
 
@@ -278,7 +278,7 @@ MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
 - [GitHub Actions for Azure](https://learn.microsoft.com/ja-jp/azure/developer/github/github-actions)
 
 ### データソース
-- [デジタル庁 - データセット](https://www.digital.go.jp/resources/data_dataset)
+- [e-Govデータポータル - レッドリスト/レッドデータブック](https://data.e-gov.go.jp/data/dataset/env_20140904_0456)
 
 ---
 

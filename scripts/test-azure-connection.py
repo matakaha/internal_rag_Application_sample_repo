@@ -56,7 +56,7 @@ def test_azure_search():
     print("\n=== Testing Azure AI Search Connection ===")
     
     endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
-    index_name = os.getenv("AZURE_SEARCH_INDEX", "documents-index")
+    index_name = os.getenv("AZURE_SEARCH_INDEX", "redlist-index")
     search_key = os.getenv("AZURE_SEARCH_KEY")
     
     if not endpoint:

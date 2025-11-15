@@ -53,7 +53,7 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$SearchAdminKey,
     
-    [string]$IndexName = "documents-index"
+    [string]$IndexName = "redlist-index"
 )
 
 $searchEndpoint = "https://$SearchService.search.windows.net"
@@ -75,27 +75,55 @@ $indexSchema = @{
             searchable = $true
             filterable = $true
             sortable = $true
+            analyzer = "ja.lucene"
         },
         @{
             name = "content"
             type = "Edm.String"
             searchable = $true
+            analyzer = "ja.lucene"
         },
         @{
             name = "category"
             type = "Edm.String"
+            searchable = $true
             filterable = $true
             facetable = $true
+        },
+        @{
+            name = "rank"
+            type = "Edm.String"
+            searchable = $false
+            filterable = $true
+            facetable = $true
+        },
+        @{
+            name = "scientific_name"
+            type = "Edm.String"
+            searchable = $true
+            filterable = $true
+            sortable = $true
+        },
+        @{
+            name = "japanese_name"
+            type = "Edm.String"
+            searchable = $true
+            filterable = $true
+            sortable = $true
+            analyzer = "ja.lucene"
+        },
+        @{
+            name = "family"
+            type = "Edm.String"
+            searchable = $true
+            filterable = $true
+            facetable = $true
+            analyzer = "ja.lucene"
         },
         @{
             name = "url"
             type = "Edm.String"
             searchable = $false
-        },
-        @{
-            name = "combined_text"
-            type = "Edm.String"
-            searchable = $true
         }
     )
     semantic = @{
@@ -106,9 +134,17 @@ $indexSchema = @{
                     titleField = @{
                         fieldName = "title"
                     }
-                    contentFields = @(
+                    prioritizedContentFields = @(
                         @{
                             fieldName = "content"
+                        }
+                    )
+                    prioritizedKeywordsFields = @(
+                        @{
+                            fieldName = "category"
+                        },
+                        @{
+                            fieldName = "rank"
                         }
                     )
                 }
@@ -144,7 +180,7 @@ try {
 .\scripts\create-index.ps1 `
     -SearchService $SEARCH_SERVICE `
     -SearchAdminKey $SEARCH_ADMIN_KEY `
-    -IndexName "documents-index"
+    -IndexName "redlist-index"
 ```
 
 ### 3. データソースの作成
@@ -250,7 +286,7 @@ param(
     
     [string]$IndexerName = "blob-indexer",
     [string]$DataSourceName = "blob-datasource",
-    [string]$IndexName = "documents-index"
+    [string]$IndexName = "redlist-index"
 )
 
 $searchEndpoint = "https://$SearchService.search.windows.net"
@@ -291,12 +327,24 @@ $indexer = @{
             targetFieldName = "category"
         },
         @{
-            sourceFieldName = "url"
-            targetFieldName = "url"
+            sourceFieldName = "rank"
+            targetFieldName = "rank"
         },
         @{
-            sourceFieldName = "combined_text"
-            targetFieldName = "combined_text"
+            sourceFieldName = "scientific_name"
+            targetFieldName = "scientific_name"
+        },
+        @{
+            sourceFieldName = "japanese_name"
+            targetFieldName = "japanese_name"
+        },
+        @{
+            sourceFieldName = "family"
+            targetFieldName = "family"
+        },
+        @{
+            sourceFieldName = "url"
+            targetFieldName = "url"
         }
     )
 }
@@ -355,7 +403,7 @@ $status.lastResult | Format-List
 
 ```powershell
 # インデックス統計を取得
-$statsUri = "$SEARCH_ENDPOINT/indexes/documents-index/stats?api-version=2023-11-01"
+$statsUri = "$SEARCH_ENDPOINT/indexes/redlist-index/stats?api-version=2023-11-01"
 $headers = @{
     "api-key" = $SEARCH_ADMIN_KEY
 }
@@ -374,14 +422,14 @@ Write-Host "`nDocument Count: $($stats.documentCount)" -ForegroundColor Green
 
 ```powershell
 # シンプルな検索テスト
-$searchUri = "$SEARCH_ENDPOINT/indexes/documents-index/docs/search?api-version=2023-11-01"
+$searchUri = "$SEARCH_ENDPOINT/indexes/redlist-index/docs/search?api-version=2023-11-01"
 $headers = @{
     "Content-Type" = "application/json"
     "api-key" = $SEARCH_ADMIN_KEY
 }
 
 $searchQuery = @{
-    search = "デジタル庁"
+    search = "イリオモテヤマネコ"
     top = 3
     select = "title,content,url"
 } | ConvertTo-Json
@@ -406,7 +454,7 @@ $results.value | ForEach-Object {
 az search index create `
     --resource-group $RESOURCE_GROUP `
     --service-name $SEARCH_SERVICE `
-    --name documents-index `
+    --name redlist-index `
     --fields "@data/schema/index-schema.json"
 
 # データソースを作成
@@ -424,7 +472,7 @@ az search indexer create `
     --service-name $SEARCH_SERVICE `
     --name blob-indexer `
     --data-source-name blob-datasource `
-    --target-index-name documents-index
+    --target-index-name redlist-index
 
 # インデクサーを実行
 az search indexer run `

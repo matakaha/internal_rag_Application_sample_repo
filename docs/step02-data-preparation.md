@@ -1,63 +1,102 @@
-# Step 2: データ準備
+﻿# Step 2: データ準備
 
-このステップでは、RAGシステムで使用するデータを準備します。デジタル庁のオープンデータをダウンロードし、Azure Blob Storageにアップロードします。
+このステップでは、RAGシステムで使用するデータを準備します。e-Govデータポータルのレッドリスト/レッドデータブック(第4次レッドリスト)をダウンロードし、Azure Blob Storageにアップロードします。
 
 ## 📚 学習目標
 
 このステップを完了すると、以下ができるようになります:
 
-- デジタル庁のオープンデータの取得方法
+- e-Govデータポータルからのデータ取得方法
 - CSVデータの確認と前処理
 - Azure Blob Storageへのデータアップロード
 - データ格納の確認
 
 ## データソース
 
-デジタル庁が公開しているオープンデータを使用します:
+環境省が公開しているレッドリスト(絶滅危惧種)のデータを使用します:
 
-**データセットURL**: https://www.digital.go.jp/resources/data_dataset
+**データセットURL**: https://data.e-gov.go.jp/data/dataset/env_20140904_0456
 
-このサイトから、以下のようなデータセットが取得できます:
-- デジタル庁の施策・プロジェクト情報
-- 各種ガイドライン
-- 統計データ
-- FAQ
+このデータセットには、以下のカテゴリのCSVファイルが含まれています:
+- 哺乳類
+- 鳥類
+- 爬虫類
+- 両生類
+- 汽水・淡水魚類
+- 昆虫類
+- 貝類
+- その他無脊椎動物
+- 植物Ⅰ(維管束植物)
+- 植物Ⅱ(藻類、蘚苔類、地衣類、菌類)
+
+各カテゴリには、学名、和名、絶滅危惧ランクなどの情報が含まれています。
 
 ## データ準備手順
 
-### 1. データセットの選択とダウンロード
+### 1. データセットのダウンロード
 
-#### デジタル庁サイトからCSVをダウンロード
+#### e-Govデータポータルからダウンロード
 
-1. ブラウザで https://www.digital.go.jp/resources/data_dataset にアクセス
-2. 適切なデータセットを選択
-3. CSV形式でダウンロード
+以下のURLから各カテゴリのCSVファイルをダウンロードします。
 
-**推奨データセット例**:
-- `digital-agency-faq.csv` - デジタル庁FAQ
-- `digital-agency-projects.csv` - プロジェクト情報
-- `digital-agency-guidelines.csv` - ガイドライン
-
-#### 手動ダウンロードの例
+**ダウンロードスクリプト** (`scripts/download-redlist-data.ps1`):
 
 ```powershell
-# データ保存用ディレクトリを作成
-New-Item -ItemType Directory -Force -Path ".\data\raw"
+# レッドリストデータダウンロードスクリプト
 
-# ブラウザでダウンロードしたCSVを移動
-# 例: ダウンロードフォルダから移動
-Move-Item "$env:USERPROFILE\Downloads\digital-agency-faq.csv" ".\data\raw\"
+# データ保存ディレクトリを作成
+New-Item -ItemType Directory -Force -Path "data\raw" | Out-Null
+
+# ダウンロードするCSVファイルのURL一覧
+$datasets = @{
+    "哺乳類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_honyurui.csv"
+    "鳥類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_tyorui.csv"
+    "爬虫類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_hachurui.csv"
+    "両生類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_ryouseirui.csv"
+    "汽水淡水魚類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_tansuigyorui.csv"
+    "昆虫類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_kontyurui_2.csv"
+    "貝類" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_kairui_1.csv"
+    "その他無脊椎動物" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_invertebrate_1.csv"
+    "維管束植物" = "https://ikilog.biodic.go.jp/rdbdata/files/rl2012/redList2012_ikansoku.csv"
+}
+
+Write-Host "レッドリストデータをダウンロードしています..." -ForegroundColor Cyan
+
+foreach ($category in $datasets.Keys) {
+    $url = $datasets[$category]
+    $filename = Split-Path $url -Leaf
+    $outputPath = "data\raw\$filename"
+    
+    Write-Host "  - $category ($filename)..." -NoNewline
+    
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $outputPath
+        Write-Host " ✓" -ForegroundColor Green
+    } catch {
+        Write-Host " ✗ エラー: $_" -ForegroundColor Red
+    }
+}
+
+Write-Host "`nダウンロード完了!" -ForegroundColor Green
+Write-Host "保存先: data\raw\" -ForegroundColor Yellow
+
+# ダウンロードファイル一覧を表示
+Get-ChildItem -Path "data\raw" -Filter "*.csv" | Format-Table Name, Length, LastWriteTime
 ```
 
-> 📝 **Note**: データセットの具体的なURLは変更される可能性があります。デジタル庁の最新情報を確認してください。
+このスクリプトを保存して実行:
+
+```powershell
+.\scripts\download-redlist-data.ps1
+```
 
 ### 2. データの確認と前処理
 
 ダウンロードしたCSVファイルの内容を確認します。
 
 ```powershell
-# CSVファイルの確認
-Get-Content .\data\raw\digital-agency-faq.csv | Select-Object -First 10
+# CSVファイルの確認(最初の数行を表示)
+Get-Content data\raw\redList2012_honyurui.csv -Encoding UTF8 | Select-Object -First 10
 
 # または、Pythonで確認
 python
@@ -66,8 +105,8 @@ python
 ```python
 import pandas as pd
 
-# CSVファイルを読み込み
-df = pd.read_csv('data/raw/digital-agency-faq.csv', encoding='utf-8')
+# CSVファイルを読み込み(Shift-JISエンコーディングの場合が多い)
+df = pd.read_csv('data/raw/redList2012_honyurui.csv', encoding='shift-jis')
 
 # データの概要を表示
 print(f"行数: {len(df)}")
@@ -75,63 +114,284 @@ print(f"列名: {df.columns.tolist()}")
 print("\n最初の5行:")
 print(df.head())
 
-# 必要な列を確認
-# 例: title, content, category, url などが含まれているか確認
+# カテゴリ（絶滅危惧ランク）の分布を確認
+print("\n絶滅危惧ランク分布:")
+print(df.iloc[:, 2].value_counts())  # 3列目がランク情報
 ```
 
 #### データ形式の例
 
-RAGに適したデータ形式:
+レッドリストCSVの典型的な形式:
 
 ```csv
-id,title,content,category,url
-1,"デジタル庁について","デジタル庁は、デジタル社会の実現に向けて...","組織","https://..."
-2,"マイナンバーカードとは","マイナンバーカードは...","サービス","https://..."
+学名,和名,カテゴリー,科名,備考
+Pteropus dasymallus,オガサワラオオコウモリ,CR,オオコウモリ科,小笠原諸島
+Mogera imaizumii,アズミモグラ,NT,モグラ科,中部地方
 ```
 
-#### データの前処理(必要に応じて)
+#### データの前処理と統合
+
+複数のCSVを統合してRAG用のJSON Lines形式に変換します。
+
+**前処理スクリプト** (`scripts/prepare-redlist-data.py`):
 
 ```python
-# 前処理スクリプト例
 import pandas as pd
 import json
-
-# CSVを読み込み
-df = pd.read_csv('data/raw/digital-agency-faq.csv', encoding='utf-8')
-
-# 欠損値を削除
-df = df.dropna(subset=['title', 'content'])
-
-# 重複を削除
-df = df.drop_duplicates(subset=['title'])
-
-# RAG用に整形
-df['combined_text'] = df['title'] + "\n\n" + df['content']
-
-# JSON Lines形式で保存(AI Searchインデックス用)
-output_data = []
-for idx, row in df.iterrows():
-    output_data.append({
-        'id': str(row.get('id', idx)),
-        'title': row['title'],
-        'content': row['content'],
-        'category': row.get('category', '未分類'),
-        'url': row.get('url', ''),
-        'combined_text': row['combined_text']
-    })
-
-# 処理済みディレクトリに保存
 import os
-os.makedirs('data/processed', exist_ok=True)
+from pathlib import Path
 
-with open('data/processed/documents.jsonl', 'w', encoding='utf-8') as f:
-    for item in output_data:
-        f.write(json.dumps(item, ensure_ascii=False) + '\n')
+# 入力・出力ディレクトリ
+input_dir = Path('data/raw')
+output_dir = Path('data/processed')
+output_dir.mkdir(parents=True, exist_ok=True)
 
-print(f"処理完了: {len(output_data)}件のドキュメント")
+# カテゴリマッピング
+category_names = {
+    'redList2012_honyurui.csv': '哺乳類',
+    'redList2012_tyorui.csv': '鳥類',
+    'redList2012_hachurui.csv': '爬虫類',
+    'redList2012_ryouseirui.csv': '両生類',
+    'redList2012_tansuigyorui.csv': '汽水・淡水魚類',
+    'redList2012_kontyurui_2.csv': '昆虫類',
+    'redList2012_kairui_1.csv': '貝類',
+    'redList2012_invertebrate_1.csv': 'その他無脊椎動物',
+    'redList2012_ikansoku.csv': '維管束植物',
+}
+
+all_documents = []
+doc_id = 1
+
+for filename, category in category_names.items():
+    file_path = input_dir / filename
+    
+    if not file_path.exists():
+        print(f"⚠️ ファイルが見つかりません: {filename}")
+        continue
+    
+    print(f"処理中: {category} ({filename})")
+    
+    try:
+        # Shift-JISで読み込み
+        df = pd.read_csv(file_path, encoding='shift-jis')
+        
+        # 列名を確認（ファイルによって異なる場合がある）
+        print(f"  列: {df.columns.tolist()}")
+        
+        # 各行をドキュメント化
+        for idx, row in df.iterrows():
+            # CSVの列構造に応じて調整
+            scientific_name = row.iloc[0] if len(row) > 0 else ""
+            japanese_name = row.iloc[1] if len(row) > 1 else ""
+            rank = row.iloc[2] if len(row) > 2 else ""
+            family = row.iloc[3] if len(row) > 3 else ""
+            
+            # タイトルとコンテンツを構築
+            title = f"{japanese_name} ({scientific_name})"
+            content = f"""
+分類: {category}
+和名: {japanese_name}
+学名: {scientific_name}
+絶滅危惧ランク: {rank}
+科名: {family}
+
+この種は環境省のレッドリスト（第4次）において{rank}に分類されています。
+""".strip()
+            
+            # JSONドキュメント作成
+            document = {
+                'id': str(doc_id),
+                'title': title,
+                'content': content,
+                'category': category,
+                'rank': rank,
+                'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+                'scientific_name': scientific_name,
+                'japanese_name': japanese_name,
+                'family': family
+            }
+            
+            all_documents.append(document)
+            doc_id += 1
+    
+    except Exception as e:
+        print(f"  ✗ エラー: {e}")
+
+print(f"\n処理完了: {len(all_documents)}件のドキュメント")
+
+# JSON Lines形式で保存
+output_file = output_dir / 'redlist-documents.jsonl'
+with open(output_file, 'w', encoding='utf-8') as f:
+    for doc in all_documents:
+        f.write(json.dumps(doc, ensure_ascii=False) + '\n')
+
+print(f"保存先: {output_file}")
+
+# サマリー表示
+print("\nカテゴリ別件数:")
+category_counts = {}
+for doc in all_documents:
+    cat = doc['category']
+    category_counts[cat] = category_counts.get(cat, 0) + 1
+
+for cat, count in sorted(category_counts.items()):
+    print(f"  {cat}: {count}件")
 ```
 
-### 3. Azure Blob Storageへのアップロード
+実行:
+
+```powershell
+python scripts\prepare-redlist-data.py
+```
+
+期待される出力:
+```
+処理中: 哺乳類 (redList2012_honyurui.csv)
+  列: ['学名', '和名', 'カテゴリー', '科名', ...]
+処理中: 鳥類 (redList2012_tyorui.csv)
+  ...
+処理完了: 3500件のドキュメント
+保存先: data\processed\redlist-documents.jsonl
+
+カテゴリ別件数:
+  哺乳類: 45件
+  鳥類: 250件
+  維管束植物: 1800件
+  ...
+```
+
+### 3. サンプルデータの生成(テスト用)
+
+実際のレッドリストデータを使用する前に、動作確認用のサンプルデータを作成します。
+
+**サンプルデータ生成スクリプト** (`scripts/generate-sample-data.py`):
+
+```python
+import json
+import os
+from pathlib import Path
+
+# 出力ディレクトリ
+output_dir = Path('data/processed')
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# サンプルデータ(絶滅危惧種の例)
+sample_documents = [
+    {
+        'id': '1',
+        'title': 'イリオモテヤマネコ (Prionailurus bengalensis iriomotensis)',
+        'content': '''分類: 哺乳類
+和名: イリオモテヤマネコ
+学名: Prionailurus bengalensis iriomotensis
+絶滅危惧ランク: CR (絶滅危惧IA類)
+科名: ネコ科
+
+この種は環境省のレッドリスト(第4次)においてCRに分類されています。
+沖縄県西表島のみに生息する日本固有の亜種です。森林の減少や交通事故により個体数が減少しています。
+推定個体数は100頭程度とされています。''',
+        'category': '哺乳類',
+        'rank': 'CR',
+        'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+        'scientific_name': 'Prionailurus bengalensis iriomotensis',
+        'japanese_name': 'イリオモテヤマネコ',
+        'family': 'ネコ科'
+    },
+    {
+        'id': '2',
+        'title': 'ライチョウ (Lagopus muta japonica)',
+        'content': '''分類: 鳥類
+和名: ライチョウ
+学名: Lagopus muta japonica
+絶滅危惧ランク: VU (絶滅危惧II類)
+科名: キジ科
+
+この種は環境省のレッドリスト(第4次)においてVUに分類されています。
+日本アルプスの高山帯に生息する天然記念物です。気候変動による生息環境の変化が懸念されています。
+推定個体数は約3,000羽とされています。''',
+        'category': '鳥類',
+        'rank': 'VU',
+        'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+        'scientific_name': 'Lagopus muta japonica',
+        'japanese_name': 'ライチョウ',
+        'family': 'キジ科'
+    },
+    {
+        'id': '3',
+        'title': 'アユモドキ (Leptobotia curta)',
+        'content': '''分類: 汽水・淡水魚類
+和名: アユモドキ
+学名: Leptobotia curta
+絶滅危惧ランク: CR (絶滅危惧IA類)
+科名: ドジョウ科
+
+この種は環境省のレッドリスト(第4次)においてCRに分類されています。
+岡山県と京都府のみに生息する希少な淡水魚です。河川改修や水質汚濁により生息地が減少しています。''',
+        'category': '汽水・淡水魚類',
+        'rank': 'CR',
+        'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+        'scientific_name': 'Leptobotia curta',
+        'japanese_name': 'アユモドキ',
+        'family': 'ドジョウ科'
+    },
+    {
+        'id': '4',
+        'title': 'オオタカ (Accipiter gentilis fujiyamae)',
+        'content': '''分類: 鳥類
+和名: オオタカ
+学名: Accipiter gentilis fujiyamae
+絶滅危惧ランク: NT (準絶滅危惧)
+科名: タカ科
+
+この種は環境省のレッドリスト(第4次)においてNTに分類されています。
+森林に生息する猛禽類で、開発による生息地の減少が課題です。近年は個体数が回復傾向にあります。''',
+        'category': '鳥類',
+        'rank': 'NT',
+        'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+        'scientific_name': 'Accipiter gentilis fujiyamae',
+        'japanese_name': 'オオタカ',
+        'family': 'タカ科'
+    },
+    {
+        'id': '5',
+        'title': 'コウノトリ (Ciconia boyciana)',
+        'content': '''分類: 鳥類
+和名: コウノトリ
+学名: Ciconia boyciana
+絶滅危惧ランク: CR (絶滅危惧IA類)
+科名: コウノトリ科
+
+この種は環境省のレッドリスト(第4次)においてCRに分類されています。
+かつて日本全国に生息していましたが、1971年に野生絶滅しました。現在は人工繁殖と放鳥により野生復帰が進められています。
+兵庫県豊岡市を中心に約300羽が野外で生息しています。''',
+        'category': '鳥類',
+        'rank': 'CR',
+        'url': 'https://data.e-gov.go.jp/data/dataset/env_20140904_0456',
+        'scientific_name': 'Ciconia boyciana',
+        'japanese_name': 'コウノトリ',
+        'family': 'コウノトリ科'
+    }
+]
+
+# JSON Lines形式で保存
+output_file = output_dir / 'sample-documents.jsonl'
+with open(output_file, 'w', encoding='utf-8') as f:
+    for doc in sample_documents:
+        f.write(json.dumps(doc, ensure_ascii=False) + '\n')
+
+print(f"サンプルデータを生成しました: {output_file}")
+print(f"ドキュメント数: {len(sample_documents)}")
+```
+
+実行:
+
+```powershell
+python scripts\generate-sample-data.py
+```
+
+これで以下のファイルが生成されます:
+- `data/processed/sample-documents.jsonl` - テスト用サンプルデータ(5件の絶滅危惧種)
+
+### 4. Azure Blob Storageへのアップロード
 
 #### Blob Storageの準備
 
@@ -221,13 +481,13 @@ Get-Content verify-download.jsonl | Select-Object -First 5
 
 ### 5. データスキーマの定義
 
-AI Searchでインデックスを作成するために、データスキーマを定義します。
+AI Searchでインデックスを作成するために、レッドリストデータに適したスキーマを定義します。
 
 `data/schema/index-schema.json`:
 
 ```json
 {
-  "name": "documents-index",
+  "name": "redlist-index",
   "fields": [
     {
       "name": "id",
@@ -240,28 +500,56 @@ AI Searchでインデックスを作成するために、データスキーマ�
       "type": "Edm.String",
       "searchable": true,
       "filterable": true,
-      "sortable": true
+      "sortable": true,
+      "analyzer": "ja.lucene"
     },
     {
       "name": "content",
       "type": "Edm.String",
-      "searchable": true
+      "searchable": true,
+      "analyzer": "ja.lucene"
     },
     {
       "name": "category",
       "type": "Edm.String",
+      "searchable": true,
       "filterable": true,
       "facetable": true
+    },
+    {
+      "name": "rank",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "scientific_name",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "sortable": true
+    },
+    {
+      "name": "japanese_name",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "sortable": true,
+      "analyzer": "ja.lucene"
+    },
+    {
+      "name": "family",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true,
+      "analyzer": "ja.lucene"
     },
     {
       "name": "url",
       "type": "Edm.String",
       "searchable": false
-    },
-    {
-      "name": "combined_text",
-      "type": "Edm.String",
-      "searchable": true
     },
     {
       "name": "content_vector",
@@ -299,6 +587,41 @@ AI Searchでインデックスを作成するために、データスキーマ�
           "titleField": {
             "fieldName": "title"
           },
+          "prioritizedContentFields": [
+            {
+              "fieldName": "content"
+            }
+          ],
+          "prioritizedKeywordsFields": [
+            {
+              "fieldName": "category"
+            },
+            {
+              "fieldName": "rank"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+**スキーマの主なポイント**:
+          "efSearch": 500,
+          "metric": "cosine"
+        }
+      }
+    ]
+  },
+  "semantic": {
+    "configurations": [
+      {
+        "name": "semantic-config",
+        "prioritizedFields": {
+          "titleField": {
+            "fieldName": "title"
+          },
           "contentFields": [
             {
               "fieldName": "content"
@@ -311,49 +634,17 @@ AI Searchでインデックスを作成するために、データスキーマ�
 }
 ```
 
-## サンプルデータの作成(データソースが利用できない場合)
+**スキーマの主なポイント**:
 
-デジタル庁のデータが取得できない場合は、サンプルデータを作成できます。
-
-```python
-import json
-
-sample_data = [
-    {
-        "id": "1",
-        "title": "デジタル庁について",
-        "content": "デジタル庁は、デジタル社会の形成に関する司令塔として、未来志向のDX（デジタル・トランスフォーメーション）を大胆に推進し、デジタル時代の官民のインフラを今後5年で一気呵成に作り上げることを目指します。",
-        "category": "組織",
-        "url": "https://www.digital.go.jp/",
-        "combined_text": "デジタル庁について\n\nデジタル庁は、デジタル社会の形成に関する司令塔として、未来志向のDX（デジタル・トランスフォーメーション）を大胆に推進し、デジタル時代の官民のインフラを今後5年で一気呵成に作り上げることを目指します。"
-    },
-    {
-        "id": "2",
-        "title": "マイナンバーカードとは",
-        "content": "マイナンバーカードは、マイナンバー(個人番号)が記載された顔写真付きのカードです。本人確認のための身分証明書として利用できるほか、様々な行政サービスを受けることができます。",
-        "category": "サービス",
-        "url": "https://www.digital.go.jp/policies/mynumber/",
-        "combined_text": "マイナンバーカードとは\n\nマイナンバーカードは、マイナンバー(個人番号)が記載された顔写真付きのカードです。本人確認のための身分証明書として利用できるほか、様々な行政サービスを受けることができます。"
-    },
-    # 更に追加...
-]
-
-# サンプルデータをJSONL形式で保存
-import os
-os.makedirs('data/processed', exist_ok=True)
-
-with open('data/processed/sample-documents.jsonl', 'w', encoding='utf-8') as f:
-    for item in sample_data:
-        f.write(json.dumps(item, ensure_ascii=False) + '\n')
-
-print(f"サンプルデータ作成完了: {len(sample_data)}件")
-```
+- **日本語アナライザー** (`ja.lucene`): `title`, `content`, `japanese_name`, `family`に適用し、日本語検索を最適化
+- **フィルタリング・ファセット**: `category`(分類), `rank`(絶滅危惧ランク)でフィルタリング可能
+- **セマンティック検索**: タイトル、コンテンツ、カテゴリ、ランクを優先フィールドとして設定
 
 ## 確認事項
 
 以下をすべて確認してください:
 
-- ✅ デジタル庁のデータをダウンロードした
+- ✅ e-Govレッドリストデータをダウンロードした(9種類のCSV)
 - ✅ データの前処理を実施した
 - ✅ JSONL形式に変換した
 - ✅ Blob Storageコンテナを作成した

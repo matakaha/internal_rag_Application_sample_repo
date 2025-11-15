@@ -51,14 +51,14 @@ Start-Process "https://$appUrl"
 
 1. **基本的な質問**
    ```
-   デジタル庁について教えてください
+   イリオモテヤマネコは絶滅危惧種ですか?
    ```
    - 応答が返ってくること
    - 参照ソースが表示されること
 
 2. **具体的な質問**
    ```
-   マイナンバーカードの申請方法は?
+   ライチョウの生息地はどこですか?
    ```
    - 関連性の高い回答が返ること
    - 複数の参照ソースが表示されること
@@ -85,7 +85,7 @@ $headers = @{
 }
 
 $body = @{
-    message = "デジタル庁について教えてください"
+    message = "イリオモテヤマネコについて教えてください"
 } | ConvertTo-Json
 
 try {
@@ -114,7 +114,7 @@ RAGシステムの品質を評価します。
 [
   {
     "id": 1,
-    "question": "デジタル庁の役割は何ですか?",
+    "question": "イリオモテヤマネコは絶滅危惧種ですか?",,
     "expected_keywords": ["デジタル社会", "司令塔", "推進"],
     "should_have_sources": true
   },
@@ -225,7 +225,7 @@ Write-Host "Pass Rate: $passRate%"
 # レスポンスタイム測定スクリプト
 $chatEndpoint = "https://$appUrl/api/chat"
 $headers = @{"Content-Type" = "application/json"}
-$body = @{message = "デジタル庁について"} | ConvertTo-Json
+$body = @{message = "イリオモテヤマネコについて教えてください"} | ConvertTo-Json
 
 $responseTimes = @()
 
@@ -376,9 +376,9 @@ az monitor metrics list `
     --output table
 ```
 
-### データ更新
+### データの更新
 
-デジタル庁のデータが更新された場合の手順:
+レッドリストのデータが更新された場合の手順:
 
 1. 新しいCSVをダウンロード
 2. データを前処理
@@ -408,7 +408,7 @@ az webapp config appsettings list `
     --output json > backup/app-settings-$(Get-Date -Format 'yyyyMMdd').json
 
 # インデックススキーマのバックアップ
-$indexUri = "$SEARCH_ENDPOINT/indexes/documents-index?api-version=2023-11-01"
+$indexUri = "$SEARCH_ENDPOINT/indexes/redlist-index?api-version=2023-11-01"
 $indexSchema = Invoke-RestMethod -Uri $indexUri -Headers @{"api-key" = $SEARCH_ADMIN_KEY}
 $indexSchema | ConvertTo-Json -Depth 10 > backup/index-schema-$(Get-Date -Format 'yyyyMMdd').json
 ```

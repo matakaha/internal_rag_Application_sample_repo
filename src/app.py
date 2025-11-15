@@ -15,7 +15,7 @@ app = Flask(__name__)
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4")
 AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
-AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "documents-index")
+AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "redlist-index")
 AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
 
 # Azure OpenAI クライアント初期化
