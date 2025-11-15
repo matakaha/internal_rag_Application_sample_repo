@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "question": "デジタル庁の役割は何ですか?",
+    "expected_keywords": ["デジタル社会", "司令塔", "推進"],
+    "should_have_sources": true
+  },
+  {
+    "id": 2,
+    "question": "マイナンバーカードとは何ですか?",
+    "expected_keywords": ["個人番号", "身分証明", "行政サービス"],
+    "should_have_sources": true
+  },
+  {
+    "id": 3,
+    "question": "デジタル庁はいつ設立されましたか?",
+    "expected_keywords": ["2021", "令和"],
+    "should_have_sources": true
+  },
+  {
+    "id": 4,
+    "question": "今日の天気は?",
+    "expected_keywords": ["情報", "ない", "わかりません"],
+    "should_have_sources": false
+  }
+]
