@@ -55,6 +55,7 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image mcr.microsoft.com/azure-cli:latest \
+            --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
             --location $LOCATION \
