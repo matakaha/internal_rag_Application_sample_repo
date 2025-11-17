@@ -1,0 +1,48 @@
+# Microsoft公式のUbuntuイメージを使用
+FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
+
+# 必要なパッケージをインストール
+RUN tdnf install -y \
+    ca-certificates \
+    curl \
+    tar \
+    gzip \
+    jq \
+    git \
+    && tdnf clean all
+
+# GitHub Runnerをインストール
+ARG RUNNER_VERSION=2.311.0
+WORKDIR /actions-runner
+
+RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
+    https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
+    && tar xzf actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
+    && rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
+    && ./bin/installdependencies.sh
+
+# 起動スクリプトを作成
+COPY <<'EOF' /start.sh
+#!/bin/bash
+set -e
+
+if [ -z "$RUNNER_TOKEN" ] || [ -z "$RUNNER_REPOSITORY_URL" ]; then
+    echo "Error: RUNNER_TOKEN and RUNNER_REPOSITORY_URL must be set"
+    exit 1
+fi
+
+./config.sh \
+    --url "${RUNNER_REPOSITORY_URL}" \
+    --token "${RUNNER_TOKEN}" \
+    --name "${RUNNER_NAME:-runner-$(hostname)}" \
+    --work "${RUNNER_WORK_DIRECTORY:-_work}" \
+    --labels "${RUNNER_LABELS:-self-hosted}" \
+    --unattended \
+    --replace
+
+./run.sh
+EOF
+
+RUN chmod +x /start.sh
+
+ENTRYPOINT ["/start.sh"]
