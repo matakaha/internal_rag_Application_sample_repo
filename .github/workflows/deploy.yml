@@ -54,7 +54,7 @@ jobs:
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
-            --image mcr.microsoft.com/azure-cli:latest \
+            --image ubuntu:22.04 \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -66,11 +66,34 @@ jobs:
               RUNNER_NAME=$RUNNER_NAME \
               RUNNER_TOKEN=$RUNNER_TOKEN \
               GITHUB_REPOSITORY=${{ github.repository }} \
-            --command-line "/bin/bash -c 'curl -o actions-runner-linux-x64-2.311.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-linux-x64-2.311.0.tar.gz && tar xzf ./actions-runner-linux-x64-2.311.0.tar.gz && ./config.sh --url https://github.com/${{ github.repository }} --token $RUNNER_TOKEN --name $RUNNER_NAME --work _work --labels self-hosted,azure,vnet && ./run.sh'"
+            --command-line "/bin/bash -c 'apt-get update && apt-get install -y curl jq && curl -o actions-runner-linux-x64-2.311.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-linux-x64-2.311.0.tar.gz && mkdir actions-runner && cd actions-runner && tar xzf ../actions-runner-linux-x64-2.311.0.tar.gz && ./config.sh --url https://github.com/$GITHUB_REPOSITORY --token $RUNNER_TOKEN --name $RUNNER_NAME --work _work --labels self-hosted,azure,vnet && ./run.sh'"
 
-          # Runner起動待機
-          echo "Waiting for runner to be ready..."
-          sleep 60
+          # Runnerが登録されるまで待機
+          echo "Waiting for runner to register with GitHub..."
+          MAX_WAIT=300  # 最大5分待機
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            RUNNER_STATUS=$(curl -s \
+              -H "Authorization: token ${{ secrets.GH_PAT }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/runners" \
+              | jq -r ".runners[] | select(.name==\"$RUNNER_NAME\") | .status")
+            
+            if [ "$RUNNER_STATUS" = "online" ]; then
+              echo "Runner is online and ready!"
+              break
+            fi
+            
+            echo "Runner status: ${RUNNER_STATUS:-not found}. Waiting... ($ELAPSED/$MAX_WAIT seconds)"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+          
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "Error: Runner did not come online within $MAX_WAIT seconds"
+            exit 1
+          fi
 
   build-and-deploy:
     needs: setup-runner
