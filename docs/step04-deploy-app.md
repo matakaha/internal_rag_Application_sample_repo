@@ -134,6 +134,27 @@ az keyvault set-policy `
 Write-Host "Key Vault access granted successfully"
 ```
 
+#### 2.4. Azure Container Registry (ACR) アクセス権限の付与
+
+サービスプリンシパルがACRからコンテナイメージをpullできるように権限を付与します。
+
+```powershell
+# ACRリソースIDを取得
+$acrName = "acrinternalragdev"  # あなたのACR名
+$acrId = (az acr show --name $acrName --query id -o tsv)
+
+# サービスプリンシパルにACR Pullロールを付与
+az role assignment create `
+    --assignee $app.appId `
+    --role AcrPull `
+    --scope $acrId
+
+Write-Host "ACR access granted successfully"
+Write-Host "Service Principal can now pull images from $acrName"
+```
+
+**重要**: この権限により、Container InstanceがPrivate Endpoint保護されたACRからGitHub Runnerイメージを安全にpullできるようになります。
+
 #### 2.5. GitHub Secretsの設定
 
 ```powershell
@@ -163,7 +184,28 @@ gh secret set AZURE_SEARCH_INDEX --body "redlist-index"
 gh secret list
 ```
 
-#### 2.6. GitHub Secretsの確認
+#### 2.6. 設定内容の確認
+
+以下のコマンドでFederated Identity設定が正しく行われたか確認します:
+
+```powershell
+# サービスプリンシパルのObject IDを確認
+$spObjectId = (az ad sp show --id $app.appId --query id -o tsv)
+Write-Host "Service Principal Object ID: $spObjectId"
+
+# Federated Credentialを確認
+az ad app federated-credential list --id $app.appId --output table
+
+# ロール割り当てを確認
+az role assignment list --assignee $app.appId --output table
+
+Write-Host "`n=== 確認完了 ==="
+Write-Host "Application ID: $($app.appId)"
+Write-Host "Tenant ID: $tenantId"
+Write-Host "Subscription ID: $subscriptionId"
+```
+
+#### 2.7. GitHub Secretsの確認
 
 以下のSecretsが設定されているか確認します:
 
@@ -200,6 +242,13 @@ env:
 ```
 
 **重要**: このワークフローは、Azure Container Registry (ACR)に格納されたカスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)を使用します。このイメージには、GitHub Runnerと必要なツールがプリインストールされており、起動が高速で安定しています。
+
+**ACR認証方式**: ワークフローでは、Managed Identityを使用した2段階Container Instance作成方式を採用しています:
+1. パブリックイメージで仮のContainer Instanceを作成してManaged Identityを取得
+2. Managed IdentityにACR Pullロールを付与
+3. 実際のGitHub RunnerイメージでContainer Instanceを再作成
+
+この方式により、ACR admin認証を使用せず、よりセキュアにPrivate Endpoint保護されたACRからイメージをpullできます。
 
 必要に応じて、環境変数を自分の環境に合わせて編集します。
 
