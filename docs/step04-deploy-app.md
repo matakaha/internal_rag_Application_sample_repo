@@ -15,7 +15,9 @@
 ## 前提条件
 
 - Step 1, 2, 3が完了していること
-- [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)の[Step 03 (GitHub Actions)](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step/tree/main/bicep/step03-github-actions)が完了していること
+- [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)の以下のステップが完了していること:
+  - [Step 03 (GitHub Actions)](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step/tree/main/bicep/step03-github-actions): GitHub Actions環境の構築
+  - **Azure Container Registry (ACR) のセットアップ**: カスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)が作成済みであること
 - GitHub Secretsが設定済みであること
 - Key Vaultに必要なシークレットが格納されていること
 
@@ -196,6 +198,8 @@ env:
   SUBNET_NAME: 'snet-container-instances'
   LOCATION: 'japaneast'
 ```
+
+**重要**: このワークフローは、Azure Container Registry (ACR)に格納されたカスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)を使用します。このイメージには、GitHub Runnerと必要なツールがプリインストールされており、起動が高速で安定しています。
 
 必要に応じて、環境変数を自分の環境に合わせて編集します。
 

@@ -51,11 +51,14 @@ jobs:
             | jq -r .token)
 
           # Container Instance作成
-          # Microsoft公式イメージ(Debian-based Azure CLI)を使用
+          # Azure Container Registry (ACR)のカスタムGitHub Runnerイメージを使用
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
-            --image mcr.microsoft.com/azure-cli:latest \
+            --image acrinternalragdev.azurecr.io/github-runner:latest \
+            --registry-login-server acrinternalragdev.azurecr.io \
+            --registry-username acrinternalragdev \
+            --registry-password $(az acr credential show --name acrinternalragdev --query "passwords[0].value" -o tsv) \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -67,7 +70,7 @@ jobs:
               RUNNER_NAME=$RUNNER_NAME \
               RUNNER_TOKEN=$RUNNER_TOKEN \
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
-            --command-line "/bin/bash -c 'apt-get update && apt-get install -y tar gzip curl jq ca-certificates && curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-linux-x64-2.311.0.tar.gz && mkdir -p /actions-runner && cd /actions-runner && tar xzf /actions-runner.tar.gz && ./config.sh --url \$RUNNER_REPOSITORY_URL --token \$RUNNER_TOKEN --name \$RUNNER_NAME --work _work --labels self-hosted,azure,vnet --unattended --replace && ./run.sh'"
+              RUNNER_LABELS=self-hosted,azure,vnet
 
           # Runnerが登録されるまで待機
           echo "Waiting for runner to register with GitHub..."
