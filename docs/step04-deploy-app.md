@@ -68,16 +68,89 @@ az webapp config set `
 az webapp config set --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME --% --linux-fx-version "PYTHON|3.11"
 ```
 
-### 2. GitHub Secretsの確認
+### 2. Federated Identity (OIDC) 認証の設定
 
-以下のSecretsが設定されているか確認します。
+GitHub ActionsからAzureへの認証には、Federated Identity (OIDC)を使用します。これにより、長期的なシークレットを管理する必要がなくなります。
+
+#### 2.1. サービスプリンシパルの作成
+
+```powershell
+# Azure ADにアプリケーション登録を作成
+$appName = "github-actions-oidc-internal-rag"
+$app = az ad app create --display-name $appName | ConvertFrom-Json
+
+# サービスプリンシパルを作成
+az ad sp create --id $app.appId
+
+# リソースグループへのContributor権限を付与
+$subscriptionId = (az account show --query id -o tsv)
+az role assignment create `
+    --assignee $app.appId `
+    --role Contributor `
+    --scope "/subscriptions/$subscriptionId/resourceGroups/rg-internal-rag-dev"
+
+Write-Host "Application (client) ID: $($app.appId)"
+```
+
+#### 2.2. Federated Credentialの設定
+
+```powershell
+# GitHubリポジトリ情報を設定
+$githubOrg = "matakaha"  # あなたのGitHubユーザー名/組織名
+$githubRepo = "internal_rag_Application_sample_repo"  # リポジトリ名
+
+# Federated Credentialを作成
+$credentialName = "github-actions-main"
+$credential = @{
+    name = $credentialName
+    issuer = "https://token.actions.githubusercontent.com"
+    subject = "repo:$githubOrg/${githubRepo}:ref:refs/heads/main"
+    audiences = @("api://AzureADTokenExchange")
+} | ConvertTo-Json
+
+az ad app federated-credential create `
+    --id $app.appId `
+    --parameters $credential
+
+Write-Host "Federated credential created successfully"
+```
+
+#### 2.3. GitHub Secretsの設定
+
+```powershell
+# 必要な情報を取得
+$tenantId = (az account show --query tenantId -o tsv)
+$subscriptionId = (az account show --query id -o tsv)
+
+# GitHub Secretsを設定
+gh secret set AZURE_CLIENT_ID --body $app.appId
+gh secret set AZURE_TENANT_ID --body $tenantId
+gh secret set AZURE_SUBSCRIPTION_ID --body $subscriptionId
+gh secret set KEY_VAULT_NAME --body "kv-internal-rag-dev"  # あなたのKey Vault名
+
+# その他のSecretsも設定
+gh secret set AZURE_OPENAI_ENDPOINT --body "https://your-openai.openai.azure.com/"
+gh secret set AZURE_OPENAI_DEPLOYMENT --body "gpt-4"
+gh secret set AZURE_SEARCH_ENDPOINT --body "https://your-search.search.windows.net"
+gh secret set AZURE_SEARCH_INDEX --body "redlist-index"
+gh secret set GH_PAT --body "ghp_your_github_personal_access_token"
+
+# 設定確認
+gh secret list
+```
+
+#### 2.4. GitHub Secretsの確認
+
+以下のSecretsが設定されているか確認します:
 
 ```powershell
 # GitHub CLIで確認
 gh secret list
 
 # 必要なSecrets:
-# - AZURE_CREDENTIALS
+# - AZURE_CLIENT_ID (Federated Identity用)
+# - AZURE_TENANT_ID (Federated Identity用)
+# - AZURE_SUBSCRIPTION_ID (Federated Identity用)
 # - KEY_VAULT_NAME
 # - GH_PAT
 # - AZURE_OPENAI_ENDPOINT
@@ -85,8 +158,6 @@ gh secret list
 # - AZURE_SEARCH_ENDPOINT
 # - AZURE_SEARCH_INDEX
 ```
-
-不足がある場合は、Step 1を参照して設定してください。
 
 ### 3. ワークフローファイルの確認
 
@@ -283,7 +354,8 @@ az webapp restart `
 
 以下をすべて確認してください:
 
-- ✅ GitHub Secretsが正しく設定されている
+- ✅ Federated Identity (OIDC)が正しく設定されている
+- ✅ GitHub Secrets (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)が設定されている
 - ✅ App Service環境変数が設定されている
 - ✅ ワークフローファイルが正しく構成されている
 - ✅ コードがGitHubにプッシュされている
@@ -299,13 +371,21 @@ az webapp restart `
 **症状**: GitHub Actionsワークフローがエラーで終了
 
 **確認事項**:
-1. GitHub Secretsが正しく設定されているか
-2. Key Vaultにシークレットが格納されているか
-3. Self-hosted Runnerが起動しているか
-4. vNet設定が正しいか
+1. GitHub Secretsが正しく設定されているか (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)
+2. Federated Credentialが正しく設定されているか
+3. Key Vaultにシークレットが格納されているか
+4. Self-hosted Runnerが起動しているか
+5. vNet設定が正しいか
 
 **対処法**:
 ```powershell
+# GitHub Secretsを確認
+gh secret list
+
+# Federated Credentialを確認
+$appId = "<your-app-id>"
+az ad app federated-credential list --id $appId
+
 # Key Vaultのシークレットを確認
 az keyvault secret list --vault-name $KEYVAULT_NAME --output table
 

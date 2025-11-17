@@ -13,10 +13,16 @@ env:
   VNET_NAME: 'vnet-internal-rag-dev'
   SUBNET_NAME: 'snet-container-instances'
   LOCATION: 'japaneast'
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   setup-runner:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       runner-name: ${{ steps.create-runner.outputs.runner-name }}
     steps:
@@ -26,7 +32,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Create Container Instance Runner
         id: create-runner
@@ -38,7 +46,7 @@ jobs:
           # Key VaultからGitHub PATを取得
           GITHUB_TOKEN=$(az keyvault secret show \
             --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name GITHUB-PAT \
+            --name GH-PAT \
             --query value -o tsv)
 
           # GitHub Runner登録トークン取得
@@ -72,6 +80,9 @@ jobs:
   build-and-deploy:
     needs: setup-runner
     runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -79,7 +90,9 @@ jobs:
       - name: Azure Login (on self-hosted runner)
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get secrets from Key Vault
         id: get-secrets
@@ -117,12 +130,17 @@ jobs:
   cleanup:
     needs: [setup-runner, build-and-deploy]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     if: always()
     steps:
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Remove Runner from GitHub
         continue-on-error: true
