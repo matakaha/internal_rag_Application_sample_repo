@@ -52,13 +52,22 @@ jobs:
 
           # Container Instance作成
           # Azure Container Registry (ACR)のカスタムGitHub Runnerイメージを使用
-          # Managed Identityを使用してACRにアクセス
-          ACR_ID=$(az acr show --name acrinternalragdev --query id -o tsv)
+          # ACR認証情報を使用してイメージをpull
+          
+          # ACR admin認証を有効化(一時的)
+          az acr update --name acrinternalragdev --admin-enabled true
+          
+          # ACR認証情報を取得
+          ACR_USERNAME=$(az acr credential show --name acrinternalragdev --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name acrinternalragdev --query "passwords[0].value" -o tsv)
           
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
+            --registry-login-server acrinternalragdev.azurecr.io \
+            --registry-username $ACR_USERNAME \
+            --registry-password $ACR_PASSWORD \
             --assign-identity \
             --os-type Linux \
             --vnet $VNET_NAME \
@@ -72,16 +81,6 @@ jobs:
               RUNNER_TOKEN=$RUNNER_TOKEN \
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_LABELS=self-hosted,azure,vnet
-          
-          # Container InstanceのManaged IdentityにACRアクセス権限を付与
-          echo "Waiting for container identity to be created..."
-          sleep 10
-          
-          PRINCIPAL_ID=$(az container show --resource-group $RESOURCE_GROUP --name $CONTAINER_GROUP_NAME --query identity.principalId -o tsv)
-          echo "Principal ID: $PRINCIPAL_ID"
-          
-          az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $ACR_ID
-          echo "ACR access granted to container identity"
 
           # Runnerが登録されるまで待機
           echo "Waiting for runner to register with GitHub..."
