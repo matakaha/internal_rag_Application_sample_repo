@@ -43,15 +43,9 @@ jobs:
           RUNNER_NAME="runner-${{ github.run_id }}"
           echo "runner-name=$RUNNER_NAME" >> $GITHUB_OUTPUT
 
-          # Key VaultからGitHub PATを取得
-          GITHUB_TOKEN=$(az keyvault secret show \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name GH-PAT \
-            --query value -o tsv)
-
-          # GitHub Runner登録トークン取得
+          # GitHub Runner登録トークン取得(GitHub PATはSecretから直接取得)
           RUNNER_TOKEN=$(curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token ${{ secrets.GH_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token" \
             | jq -r .token)
@@ -145,15 +139,9 @@ jobs:
       - name: Remove Runner from GitHub
         continue-on-error: true
         run: |
-          # Key VaultからGitHub PATを取得
-          GITHUB_TOKEN=$(az keyvault secret show \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name GITHUB-PAT \
-            --query value -o tsv)
-
-          # Runner一覧取得
+          # Runner一覧取得(GitHub PATはSecretから直接取得)
           RUNNERS=$(curl -s \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token ${{ secrets.GH_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runners")
 
@@ -162,7 +150,7 @@ jobs:
           
           if [ ! -z "$RUNNER_ID" ]; then
             curl -X DELETE \
-              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Authorization: token ${{ secrets.GH_PAT }}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${{ github.repository }}/actions/runners/$RUNNER_ID"
           fi

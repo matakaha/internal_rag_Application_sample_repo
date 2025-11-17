@@ -145,12 +145,17 @@ gh secret set AZURE_TENANT_ID --body $tenantId
 gh secret set AZURE_SUBSCRIPTION_ID --body $subscriptionId
 gh secret set KEY_VAULT_NAME --body "kv-gh-runner-dev"  # あなたのKey Vault名
 
+# GitHub PAT(Personal Access Token)を設定
+# 注: Key VaultはPrivate Endpointで保護されているため、GitHub-hostedランナーから
+# アクセスできません。そのため、GH_PATは直接GitHub Secretsに設定します。
+Write-Host "GitHub Personal Access Tokenを入力してください:"
+gh secret set GH_PAT
+
 # その他のSecretsも設定
 gh secret set AZURE_OPENAI_ENDPOINT --body "https://your-openai.openai.azure.com/"
 gh secret set AZURE_OPENAI_DEPLOYMENT --body "gpt-4"
 gh secret set AZURE_SEARCH_ENDPOINT --body "https://your-search.search.windows.net"
 gh secret set AZURE_SEARCH_INDEX --body "redlist-index"
-gh secret set GH_PAT --body "ghp_your_github_personal_access_token"
 
 # 設定確認
 gh secret list
@@ -169,7 +174,7 @@ gh secret list
 # - AZURE_TENANT_ID (Federated Identity用)
 # - AZURE_SUBSCRIPTION_ID (Federated Identity用)
 # - KEY_VAULT_NAME
-# - GH_PAT
+# - GH_PAT (GitHub Personal Access Token - Runner登録用)
 # - AZURE_OPENAI_ENDPOINT
 # - AZURE_OPENAI_DEPLOYMENT
 # - AZURE_SEARCH_ENDPOINT
