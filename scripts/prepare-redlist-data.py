@@ -34,8 +34,8 @@ for filename, category in category_names.items():
     print(f"処理中: {category} ({filename})")
     
     try:
-        # Shift-JISで読み込み
-        df = pd.read_csv(file_path, encoding='shift-jis')
+        # CP932(Windows-31J)で読み込み
+        df = pd.read_csv(file_path, encoding='cp932')
         
         # 列名を確認(ファイルによって異なる場合がある)
         print(f"  列: {df.columns.tolist()}")

@@ -536,9 +536,37 @@ az role assignment create `
 
 Write-Host "✓ Storage Account アクセス権限を付与しました" -ForegroundColor Green
 
+# AI SearchのManaged Identityを有効化
+Write-Host "`nEnabling AI Search Managed Identity..." -ForegroundColor Yellow
+
+# AI SearchにシステムマネージドIDを設定
+az search service update `
+    --resource-group $RESOURCE_GROUP `
+    --name $AZURE_SEARCH_SERVICE_NAME `
+    --identity-type SystemAssigned
+
+# AI SearchのManaged Identity(プリンシパルID)を取得
+$SEARCH_PRINCIPAL_ID = az search service show `
+    --resource-group $RESOURCE_GROUP `
+    --name $AZURE_SEARCH_SERVICE_NAME `
+    --query identity.principalId -o tsv
+
+Write-Host "AI Search Managed Identity: $SEARCH_PRINCIPAL_ID" -ForegroundColor Green
+
+# AI Search → Storage Accountへのアクセス権限を付与
+az role assignment create `
+    --assignee $SEARCH_PRINCIPAL_ID `
+    --role "Storage Blob Data Reader" `
+    --scope $STORAGE_RESOURCE_ID
+
+Write-Host "✓ AI Search → Storage Account アクセス権限を付与しました" -ForegroundColor Green
+
 # 権限の確認
-Write-Host "`n現在のロール割り当て:" -ForegroundColor Cyan
-az role assignment list --assignee $PRINCIPAL_ID --output table
+Write-Host "`nApp Service ロール割り当て:" -ForegroundColor Cyan
+az role assignment list --all --query "[?principalId=='$PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
+
+Write-Host "`nAI Search ロール割り当て:" -ForegroundColor Cyan
+az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
 ```
 
 ## 確認事項

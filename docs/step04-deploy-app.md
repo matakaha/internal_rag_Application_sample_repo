@@ -15,7 +15,7 @@
 ## 前提条件
 
 - Step 1, 2, 3が完了していること
-- [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)のStep 08が完了していること
+- [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)の[Step 03 (GitHub Actions)](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step/tree/main/bicep/step03-github-actions)が完了していること
 - GitHub Secretsが設定済みであること
 - Key Vaultに必要なシークレットが格納されていること
 
@@ -45,7 +45,7 @@ az webapp config appsettings list `
 | `AZURE_SEARCH_ENDPOINT` | AI Searchエンドポイント | Step 1で設定済み |
 | `AZURE_SEARCH_INDEX` | インデックス名 | Step 3で作成 |
 | `SCM_DO_BUILD_DURING_DEPLOYMENT` | ビルド設定 | `true` |
-| `WEBSITE_HTTPLOGGING_RETENTION_DAYS` | ログ保持日数 | `7` |
+| `WEBSITE_HTTPLOGGING_RETENTION_DAYS`(下記追加設定の結果として設定されますので、のちほど確認) | ログ保持日数 | `7` |
 
 #### 追加設定
 
@@ -64,11 +64,8 @@ az webapp config set `
     --name $WEBAPP_NAME `
     --startup-file "gunicorn --bind=0.0.0.0:8000 --workers=4 --timeout=600 src.app:app"
 
-# Pythonバージョンを設定
-az webapp config set `
-    --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
-    --linux-fx-version "PYTHON|3.11"
+# Pythonバージョンを設定(PowerShellの解析を停止するため --% を使用)
+az webapp config set --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME --% --linux-fx-version "PYTHON|3.11"
 ```
 
 ### 2. GitHub Secretsの確認
@@ -82,7 +79,7 @@ gh secret list
 # 必要なSecrets:
 # - AZURE_CREDENTIALS
 # - KEY_VAULT_NAME
-# - GITHUB_PAT
+# - GH_PAT
 # - AZURE_OPENAI_ENDPOINT
 # - AZURE_OPENAI_DEPLOYMENT
 # - AZURE_SEARCH_ENDPOINT

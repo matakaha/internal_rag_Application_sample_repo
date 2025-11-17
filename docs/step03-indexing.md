@@ -41,7 +41,19 @@ Write-Host "Search Endpoint: $SEARCH_ENDPOINT"
 
 ### 2. インデックススキーマの作成
 
-`scripts/create-index.ps1`:
+#### スクリプトファイルの作成
+
+以下のコマンドでスクリプトファイルを作成します:
+
+```powershell
+# スクリプトを作成(VS Codeで開く)
+New-Item -ItemType File -Path "scripts\create-index.ps1" -Force
+code scripts\create-index.ps1
+```
+
+作成した `scripts/create-index.ps1` に以下の内容を貼り付けて保存します:
+
+**ファイル内容** (`scripts/create-index.ps1`):
 
 ```powershell
 # AI Searchインデックス作成スクリプト
@@ -187,7 +199,23 @@ try {
 
 Blob Storageをデータソースとして登録します。
 
-`scripts/create-datasource.ps1`:
+> 💡 **認証方法**: AI SearchからStorage Accountへのアクセスには**Managed Identity**を使用します。これはセキュリティ上最も安全で、キーのローテーションが不要です。
+
+**前提条件**: Step 1でAI SearchのManaged Identityが有効化され、Storage Accountへの権限が付与されていること。
+
+#### スクリプトファイルの作成
+
+以下のコマンドでスクリプトファイルを作成します:
+
+```powershell
+# スクリプトを作成(VS Codeで開く)
+New-Item -ItemType File -Path "scripts\create-datasource.ps1" -Force
+code scripts\create-datasource.ps1
+```
+
+作成した `scripts/create-datasource.ps1` に以下の内容を貼り付けて保存します:
+
+**ファイル内容** (`scripts/create-datasource.ps1`):
 
 ```powershell
 # AI Searchデータソース作成スクリプト
@@ -202,9 +230,6 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$StorageAccountName,
     
-    [Parameter(Mandatory=$true)]
-    [string]$StorageAccountKey,
-    
     [string]$ContainerName = "rag-documents",
     [string]$DataSourceName = "blob-datasource"
 )
@@ -212,12 +237,21 @@ param(
 $searchEndpoint = "https://$SearchService.search.windows.net"
 $apiVersion = "2023-11-01"
 
+Write-Host "Using Managed Identity for authentication" -ForegroundColor Cyan
+
+# Storage AccountのResource IDを構築
+$subscriptionId = az account show --query id -o tsv
+$resourceGroup = az storage account show --name $StorageAccountName --query resourceGroup -o tsv
+
+$storageResourceId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
+$connectionString = "ResourceId=$storageResourceId;"
+
 # データソース定義
 $dataSource = @{
     name = $DataSourceName
     type = "azureblob"
     credentials = @{
-        connectionString = "DefaultEndpointsProtocol=https;AccountName=$StorageAccountName;AccountKey=$StorageAccountKey;EndpointSuffix=core.windows.net"
+        connectionString = $connectionString
     }
     container = @{
         name = $ContainerName
@@ -225,7 +259,7 @@ $dataSource = @{
     }
     dataChangeDetectionPolicy = @{
         "@odata.type" = "#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy"
-        highWaterMarkColumnName = "_ts"
+        highWaterMarkColumnName = "metadata_storage_last_modified"
     }
 }
 
@@ -249,22 +283,13 @@ try {
 }
 ```
 
-Storage Accountキーを取得して実行:
+実行:
 
 ```powershell
-# Storage Account キーを取得
-$STORAGE_ACCOUNT = "<your-storage-account-name>"
-$STORAGE_KEY = az storage account keys list `
-    --resource-group $RESOURCE_GROUP `
-    --account-name $STORAGE_ACCOUNT `
-    --query "[0].value" -o tsv
-
-# データソースを作成
 .\scripts\create-datasource.ps1 `
     -SearchService $SEARCH_SERVICE `
     -SearchAdminKey $SEARCH_ADMIN_KEY `
     -StorageAccountName $STORAGE_ACCOUNT `
-    -StorageAccountKey $STORAGE_KEY `
     -ContainerName "rag-documents"
 ```
 
@@ -272,7 +297,19 @@ $STORAGE_KEY = az storage account keys list `
 
 データソースからインデックスにデータを取り込むインデクサーを作成します。
 
-`scripts/create-indexer.ps1`:
+#### スクリプトファイルの作成
+
+以下のコマンドでスクリプトファイルを作成します:
+
+```powershell
+# スクリプトを作成(VS Codeで開く)
+New-Item -ItemType File -Path "scripts\create-indexer.ps1" -Force
+code scripts\create-indexer.ps1
+```
+
+作成した `scripts/create-indexer.ps1` に以下の内容を貼り付けて保存します:
+
+**ファイル内容** (`scripts/create-indexer.ps1`):
 
 ```powershell
 # AI Searchインデクサー作成スクリプト
@@ -377,7 +414,31 @@ try {
     -SearchAdminKey $SEARCH_ADMIN_KEY
 ```
 
-### 5. インデクサーの実行
+### 5. インデクサーの実行とステータス確認
+
+> ⚠️ **Private Endpoint環境の注意**: AI Searchが`publicNetworkAccess: Disabled`に設定されている場合、ローカル環境からREST APIでのステータス確認や検索テストはできません。Azure CLIコマンドまたはAzure Portalを使用してください。
+
+#### Azure CLI でインデクサーを実行・確認(推奨)
+
+```powershell
+# インデクサーを実行
+az search indexer run `
+    --resource-group $RESOURCE_GROUP `
+    --service-name $SEARCH_SERVICE `
+    --name blob-indexer
+
+Write-Host "Indexer started. Waiting for completion..." -ForegroundColor Yellow
+Start-Sleep -Seconds 10
+
+# インデクサーのステータスを確認
+az search indexer show-status `
+    --resource-group $RESOURCE_GROUP `
+    --service-name $SEARCH_SERVICE `
+    --name blob-indexer `
+    --query "lastResult" -o json
+```
+
+#### REST API で実行する場合(Public Access有効時のみ)
 
 ```powershell
 # インデクサーを手動実行
@@ -387,38 +448,55 @@ $headers = @{
     "api-key" = $SEARCH_ADMIN_KEY
 }
 
-Invoke-RestMethod -Uri $uri -Method Post -Headers $headers
-
-Write-Host "Indexer started. Waiting for completion..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
-
-# インデクサーのステータス確認
-$statusUri = "$SEARCH_ENDPOINT/indexers/$IndexerName/status?api-version=2023-11-01"
-$status = Invoke-RestMethod -Uri $statusUri -Headers $headers
-
-$status.lastResult | Format-List
+try {
+    Invoke-RestMethod -Uri $uri -Method Post -Headers $headers
+    Write-Host "Indexer started. Waiting for completion..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+    
+    # インデクサーのステータス確認
+    $statusUri = "$SEARCH_ENDPOINT/indexers/$IndexerName/status?api-version=2023-11-01"
+    $status = Invoke-RestMethod -Uri $statusUri -Headers $headers
+    $status.lastResult | Format-List
+} catch {
+    Write-Host "Error: Private Endpoint環境ではAzure CLIを使用してください" -ForegroundColor Yellow
+    Write-Host "実行: az search indexer show-status --resource-group `$RESOURCE_GROUP --service-name `$SEARCH_SERVICE --name blob-indexer" -ForegroundColor Cyan
+}
 ```
 
 ### 6. インデックスの確認
 
+#### Azure Portal で確認(推奨)
+
+1. Azure Portal (https://portal.azure.com) を開く
+2. AI Search リソースに移動
+3. 「インデックス」→ `redlist-index` を選択
+4. ドキュメント数と統計情報を確認
+
+#### Azure CLI で確認
+
 ```powershell
-# インデックス統計を取得
-$statsUri = "$SEARCH_ENDPOINT/indexes/redlist-index/stats?api-version=2023-11-01"
-$headers = @{
-    "api-key" = $SEARCH_ADMIN_KEY
-}
-
-$stats = Invoke-RestMethod -Uri $statsUri -Headers $headers
-Write-Host "`nIndex Statistics:" -ForegroundColor Cyan
-$stats | Format-List
-
-# ドキュメント数を確認
-Write-Host "`nDocument Count: $($stats.documentCount)" -ForegroundColor Green
+# インデックス情報を確認
+az search index show `
+    --resource-group $RESOURCE_GROUP `
+    --service-name $SEARCH_SERVICE `
+    --name redlist-index `
+    --query "{name:name, fields:fields[].{name:name, type:type}}" -o json
 ```
+
+> 💡 **ヒント**: ドキュメント数などの統計情報は、Azure Portal の「インデックス」画面で確認できます。
 
 ### 7. 検索テスト
 
-インデックスが正しく作成されたか、検索テストを実施します。
+#### Azure Portal で検索テスト(推奨)
+
+Private Endpoint環境では、Azure Portalの「検索エクスプローラー」を使用します:
+
+1. Azure Portal で AI Search リソースを開く
+2. 「検索エクスプローラー」を選択
+3. インデックス: `redlist-index` を選択
+4. 検索ボックスに `イリオモテヤマネコ` と入力して検索
+
+#### REST API で検索する場合(Public Access有効時のみ)
 
 ```powershell
 # シンプルな検索テスト
@@ -434,14 +512,18 @@ $searchQuery = @{
     select = "title,content,url"
 } | ConvertTo-Json
 
-$results = Invoke-RestMethod -Uri $searchUri -Method Post -Headers $headers -Body $searchQuery
-
-Write-Host "`nSearch Results:" -ForegroundColor Cyan
-$results.value | ForEach-Object {
-    Write-Host "`nTitle: $($_.title)" -ForegroundColor Yellow
-    Write-Host "Content: $($_.content.Substring(0, [Math]::Min(100, $_.content.Length)))..."
-    Write-Host "URL: $($_.url)"
-    Write-Host "---"
+try {
+    $results = Invoke-RestMethod -Uri $searchUri -Method Post -Headers $headers -Body $searchQuery
+    
+    Write-Host "`nSearch Results:" -ForegroundColor Cyan
+    $results.value | ForEach-Object {
+        Write-Host "`nTitle: $($_.title)" -ForegroundColor Yellow
+        Write-Host "Content: $($_.content.Substring(0, [Math]::Min(100, $_.content.Length)))..."
+        Write-Host "URL: $($_.url)"
+        Write-Host "---"
+    }
+} catch {
+    Write-Host "Error: Private Endpoint環境ではAzure Portalの検索エクスプローラーを使用してください" -ForegroundColor Yellow
 }
 ```
 

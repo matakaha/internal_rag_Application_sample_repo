@@ -96,17 +96,42 @@ Get-ChildItem -Path "data\raw" -Filter "*.csv" | Format-Table Name, Length, Last
 
 ```powershell
 # CSVファイルの確認(最初の数行を表示)
-Get-Content data\raw\redList2012_honyurui.csv -Encoding UTF8 | Select-Object -First 10
+# Shift-JISエンコーディングで読み込む
+Get-Content data\raw\redList2012_honyurui.csv -Encoding Default | Select-Object -First 10
 
 # または、Pythonで確認
+python
+```
+
+期待される出力:
+```
+カテゴリー,分類群,和名,学名
+絶滅（EX）,哺乳類,オキナワオオコウモリ,Pteropus loochoensis
+絶滅（EX）,哺乳類,ミヤココキクガシラコウモリ,Rhinolophus pumilus miyakonis
+絶滅（EX）,哺乳類,オガサワラアブラコウモリ,Pipistrellus sturdeei
+絶滅（EX）,哺乳類,エゾオオカミ,Canis lupus hattai
+絶滅（EX）,哺乳類,ニホンオオカミ,Canis lupus hodophilax
+絶滅（EX）,哺乳類,ニホンカワウソ（本州以南亜種）,Lutra lutra nippon
+絶滅（EX）,哺乳類,ニホンカワウソ（北海道亜種）,Lutra lutra whiteleyi
+絶滅危惧ⅠA類（CR）,哺乳類,センカクモグラ,Mogera uchidai
+絶滅危惧ⅠA類（CR）,哺乳類,ダイトウオオコウモリ,Pteropus dasymallus daitoensis
+```
+
+Pythonでデータを確認する場合:
+
+```powershell
+# venv環境を有効化
+.\venv\Scripts\Activate.ps1
+
+# Pythonを起動
 python
 ```
 
 ```python
 import pandas as pd
 
-# CSVファイルを読み込み(Shift-JISエンコーディングの場合が多い)
-df = pd.read_csv('data/raw/redList2012_honyurui.csv', encoding='shift-jis')
+# CSVファイルを読み込み(CP932エンコーディング)
+df = pd.read_csv('data/raw/redList2012_honyurui.csv', encoding='cp932')
 
 # データの概要を表示
 print(f"行数: {len(df)}")
@@ -114,10 +139,36 @@ print(f"列名: {df.columns.tolist()}")
 print("\n最初の5行:")
 print(df.head())
 
-# カテゴリ（絶滅危惧ランク）の分布を確認
+# カテゴリ(絶滅危惧ランク)の分布を確認
 print("\n絶滅危惧ランク分布:")
-print(df.iloc[:, 2].value_counts())  # 3列目がランク情報
+print(df.iloc[:, 0].value_counts())  # 1列目がカテゴリー
+
+# Pythonを終了
+exit()
 ```
+
+期待される出力:
+```
+行数: 72
+列名: ['カテゴリー', '分類群', '和名', '学名']
+
+最初の5行:
+           カテゴリー  分類群                  和名                      学名
+0       絶滅（EX）  哺乳類        オキナワオオコウモリ    Pteropus loochoensis
+1       絶滅（EX）  哺乳類  ミヤココキクガシラコウモリ  Rhinolophus pumilus ...
+2       絶滅（EX）  哺乳類    オガサワラアブラコウモリ   Pipistrellus sturdeei
+3       絶滅（EX）  哺乳類            エゾオオカミ       Canis lupus hattai
+4       絶滅（EX）  哺乳類           ニホンオオカミ     Canis lupus hodophilax
+
+絶滅危惧ランク分布:
+絶滅危惧Ⅱ類（VU）      31
+絶滅危惧ⅠB類（EN）      15
+絶滅（EX）            10
+絶滅危惧ⅠA類（CR）       9
+準絶滅危惧（NT）         7
+```
+
+> 📝 **Note**: ガイドに記載されているコードブロックは説明用のサンプルです。Python対話モードでは、一度に1つのコマンドを実行してください。
 
 #### データ形式の例
 
@@ -172,8 +223,8 @@ for filename, category in category_names.items():
     print(f"処理中: {category} ({filename})")
     
     try:
-        # Shift-JISで読み込み
-        df = pd.read_csv(file_path, encoding='shift-jis')
+        # CP932(Windows-31J)で読み込み
+        df = pd.read_csv(file_path, encoding='cp932')
         
         # 列名を確認（ファイルによって異なる場合がある）
         print(f"  列: {df.columns.tolist()}")
@@ -247,22 +298,32 @@ python scripts\prepare-redlist-data.py
 期待される出力:
 ```
 処理中: 哺乳類 (redList2012_honyurui.csv)
-  列: ['学名', '和名', 'カテゴリー', '科名', ...]
+  列: ['カテゴリー', '分類群', '和名', '学名']
 処理中: 鳥類 (redList2012_tyorui.csv)
-  ...
-処理完了: 3500件のドキュメント
+  列: ['カテゴリー', '分類群', '和名', '学名']
+処理中: 爬虫類 (redList2012_hachurui.csv)
+  列: ['カテゴリー', '分類群', '和名', '学名']
+...
+処理完了: 3597件のドキュメント
 保存先: data\processed\redlist-documents.jsonl
 
 カテゴリ別件数:
-  哺乳類: 45件
-  鳥類: 250件
-  維管束植物: 1800件
-  ...
+  その他無脊椎動物: 56件
+  汽水・淡水魚類: 189件
+  哺乳類: 72件
+  両生類: 49件
+  昆虫類: 357件
+  維管束植物: 2083件
+  貝類: 563件
+  爬虫類: 40件
+  鳥類: 188件
 ```
 
 ### 3. サンプルデータの生成(テスト用)
 
 実際のレッドリストデータを使用する前に、動作確認用のサンプルデータを作成します。
+
+> 📝 **Note**: このスクリプトはCSVファイルを読み込まず、コード内でサンプルデータを生成するため、エンコーディングの問題は発生しません。
 
 **サンプルデータ生成スクリプト** (`scripts/generate-sample-data.py`):
 
@@ -416,17 +477,58 @@ az storage container show `
 
 #### データファイルのアップロード
 
+> 💡 **推奨**: 最初は**テスト用サンプルデータ(5件)**から始めることをお勧めします。動作確認後、必要に応じて実データ(3597件)に切り替えます。
+
+**オプション1: テスト用サンプルデータをアップロード(推奨)**
+
 ```powershell
-# 処理済みJSONLファイルをアップロード
+# テスト用サンプルデータ(5件)をアップロード
 az storage blob upload `
     --account-name $STORAGE_ACCOUNT `
     --container-name $CONTAINER_NAME `
-    --name "documents.jsonl" `
-    --file "data/processed/documents.jsonl" `
+    --name "sample-documents.jsonl" `
+    --file "data/processed/sample-documents.jsonl" `
+    --auth-mode login `
+    --overwrite
+```
+
+**オプション2: 実データをアップロード**
+
+```powershell
+# 実データ(全3597件)をアップロード
+az storage blob upload `
+    --account-name $STORAGE_ACCOUNT `
+    --container-name $CONTAINER_NAME `
+    --name "redlist-documents.jsonl" `
+    --file "data/processed/redlist-documents.jsonl" `
+    --auth-mode login `
+    --overwrite
+```
+
+**オプション3: 両方アップロード(並行テスト用)**
+
+```powershell
+# 両方のファイルをアップロード
+az storage blob upload `
+    --account-name $STORAGE_ACCOUNT `
+    --container-name $CONTAINER_NAME `
+    --name "sample-documents.jsonl" `
+    --file "data/processed/sample-documents.jsonl" `
     --auth-mode login `
     --overwrite
 
-# アップロード確認
+az storage blob upload `
+    --account-name $STORAGE_ACCOUNT `
+    --container-name $CONTAINER_NAME `
+    --name "redlist-documents.jsonl" `
+    --file "data/processed/redlist-documents.jsonl" `
+    --auth-mode login `
+    --overwrite
+```
+
+**アップロード確認:**
+
+```powershell
 az storage blob list `
     --account-name $STORAGE_ACCOUNT `
     --container-name $CONTAINER_NAME `
@@ -467,23 +569,45 @@ az storage blob list `
     --query "[].{Name:name, Size:properties.contentLength, LastModified:properties.lastModified}" `
     --output table
 
-# 特定のBlobをダウンロードして確認
+# 特定のBlobをダウンロードして確認(実データの場合)
 az storage blob download `
     --account-name $STORAGE_ACCOUNT `
     --container-name $CONTAINER_NAME `
-    --name "documents.jsonl" `
+    --name "redlist-documents.jsonl" `
     --file "verify-download.jsonl" `
     --auth-mode login
 
-# ダウンロードしたファイルを確認
-Get-Content verify-download.jsonl | Select-Object -First 5
+# ダウンロードしたファイルを確認(UTF-8エンコーディング)
+Get-Content verify-download.jsonl -Encoding UTF8 | Select-Object -First 5
 ```
+
+期待される出力:
+```json
+{"id": "1", "title": "オキナワオオコウモリ (絶滅（EX）)", "content": "分類: 哺乳類\n和名: オキナワオオコウモリ\n学名: Pteropus loochoensis\n絶滅危惧ランク: 絶滅（EX）\n科名: 哺乳類\n\nこの種は環境省のレッドリスト（第4次）において絶滅（EX）に分類されています。", "category": "哺乳類", "rank": "絶滅（EX）", "url": "https://data.e-gov.go.jp/data/dataset/env_20140904_0456", "scientific_name": "Pteropus loochoensis", "japanese_name": "オキナワオオコウモリ", "family": "哺乳類"}
+```
+
+> 📝 **Note**: JSONLファイルはUTF-8で保存されているため、`-Encoding UTF8`を指定します。CSVファイル(CP932)とは異なります。
 
 ### 5. データスキーマの定義
 
 AI Searchでインデックスを作成するために、レッドリストデータに適したスキーマを定義します。
 
-`data/schema/index-schema.json`:
+#### スキーマファイルの作成
+
+以下のコマンドでディレクトリとファイルを作成します:
+
+```powershell
+# スキーマ保存ディレクトリを作成
+New-Item -ItemType Directory -Force -Path "data\schema" | Out-Null
+
+# スキーマファイルを作成(VS Codeで開く)
+New-Item -ItemType File -Path "data\schema\index-schema.json" -Force
+code data\schema\index-schema.json
+```
+
+作成した `data/schema/index-schema.json` に以下の内容を貼り付けて保存します:
+
+**ファイル内容** (`data/schema/index-schema.json`):
 
 ```json
 {
@@ -608,36 +732,10 @@ AI Searchでインデックスを作成するために、レッドリストデ�
 ```
 
 **スキーマの主なポイント**:
-          "efSearch": 500,
-          "metric": "cosine"
-        }
-      }
-    ]
-  },
-  "semantic": {
-    "configurations": [
-      {
-        "name": "semantic-config",
-        "prioritizedFields": {
-          "titleField": {
-            "fieldName": "title"
-          },
-          "contentFields": [
-            {
-              "fieldName": "content"
-            }
-          ]
-        }
-      }
-    ]
-  }
-}
-```
-
-**スキーマの主なポイント**:
 
 - **日本語アナライザー** (`ja.lucene`): `title`, `content`, `japanese_name`, `family`に適用し、日本語検索を最適化
 - **フィルタリング・ファセット**: `category`(分類), `rank`(絶滅危惧ランク)でフィルタリング可能
+- **ベクトル検索**: `content_vector`フィールドで1536次元のベクトル検索をサポート(text-embedding-ada-002モデル用)
 - **セマンティック検索**: タイトル、コンテンツ、カテゴリ、ランクを優先フィールドとして設定
 
 ## 確認事項
@@ -660,10 +758,12 @@ AI Searchでインデックスを作成するために、レッドリストデ�
 
 **対処法**:
 ```python
-# 異なるエンコーディングを試す
-df = pd.read_csv('data.csv', encoding='shift-jis')
-# または
+# e-Govレッドリストデータの正しいエンコーディングはCP932です
 df = pd.read_csv('data.csv', encoding='cp932')
+
+# 他のCSVファイルの場合は以下も試してください
+# df = pd.read_csv('data.csv', encoding='shift-jis')
+# df = pd.read_csv('data.csv', encoding='utf-8')
 ```
 
 ### Blob Storageアップロードに失敗
