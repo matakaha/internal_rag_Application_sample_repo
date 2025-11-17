@@ -53,12 +53,14 @@ jobs:
           # Container Instance作成
           # Azure Container Registry (ACR)のカスタムGitHub Runnerイメージを使用
           # Managed Identityを使用してACRにアクセス
+          ACR_ID=$(az acr show --name acrinternalragdev --query id -o tsv)
+          
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
-            --acr-identity system \
-            --assign-identity --scope $(az acr show --name acrinternalragdev --query id -o tsv) \
+            --assign-identity \
+            --acr-identity [system] \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -71,6 +73,10 @@ jobs:
               RUNNER_TOKEN=$RUNNER_TOKEN \
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_LABELS=self-hosted,azure,vnet
+          
+          # Container InstanceにACRアクセス権限を付与
+          PRINCIPAL_ID=$(az container show --resource-group $RESOURCE_GROUP --name $CONTAINER_GROUP_NAME --query identity.principalId -o tsv)
+          az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $ACR_ID
 
           # Runnerが登録されるまで待機
           echo "Waiting for runner to register with GitHub..."
