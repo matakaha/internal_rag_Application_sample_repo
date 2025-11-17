@@ -60,7 +60,6 @@ jobs:
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
             --assign-identity \
-            --acr-identity [system] \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -74,9 +73,15 @@ jobs:
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_LABELS=self-hosted,azure,vnet
           
-          # Container InstanceにACRアクセス権限を付与
+          # Container InstanceのManaged IdentityにACRアクセス権限を付与
+          echo "Waiting for container identity to be created..."
+          sleep 10
+          
           PRINCIPAL_ID=$(az container show --resource-group $RESOURCE_GROUP --name $CONTAINER_GROUP_NAME --query identity.principalId -o tsv)
+          echo "Principal ID: $PRINCIPAL_ID"
+          
           az role assignment create --assignee $PRINCIPAL_ID --role AcrPull --scope $ACR_ID
+          echo "ACR access granted to container identity"
 
           # Runnerが登録されるまで待機
           echo "Waiting for runner to register with GitHub..."
