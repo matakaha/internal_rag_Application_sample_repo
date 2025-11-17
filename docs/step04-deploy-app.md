@@ -115,7 +115,24 @@ az ad app federated-credential create `
 Write-Host "Federated credential created successfully"
 ```
 
-#### 2.3. GitHub Secretsの設定
+#### 2.3. Key Vaultアクセス権限の付与
+
+サービスプリンシパルがKey Vaultからシークレットを読み取れるように権限を付与します。
+
+```powershell
+# Key Vault名を取得(環境に応じて変更)
+$keyVaultName = "kv-gh-runner-dev"  # あなたのKey Vault名
+
+# サービスプリンシパルにKey Vaultのシークレット読み取り権限を付与
+az keyvault set-policy `
+    --name $keyVaultName `
+    --spn $app.appId `
+    --secret-permissions get list
+
+Write-Host "Key Vault access granted successfully"
+```
+
+#### 2.5. GitHub Secretsの設定
 
 ```powershell
 # 必要な情報を取得
@@ -126,7 +143,7 @@ $subscriptionId = (az account show --query id -o tsv)
 gh secret set AZURE_CLIENT_ID --body $app.appId
 gh secret set AZURE_TENANT_ID --body $tenantId
 gh secret set AZURE_SUBSCRIPTION_ID --body $subscriptionId
-gh secret set KEY_VAULT_NAME --body "kv-internal-rag-dev"  # あなたのKey Vault名
+gh secret set KEY_VAULT_NAME --body "kv-gh-runner-dev"  # あなたのKey Vault名
 
 # その他のSecretsも設定
 gh secret set AZURE_OPENAI_ENDPOINT --body "https://your-openai.openai.azure.com/"
@@ -139,7 +156,7 @@ gh secret set GH_PAT --body "ghp_your_github_personal_access_token"
 gh secret list
 ```
 
-#### 2.4. GitHub Secretsの確認
+#### 2.6. GitHub Secretsの確認
 
 以下のSecretsが設定されているか確認します:
 
