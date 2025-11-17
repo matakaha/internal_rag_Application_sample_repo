@@ -1,6 +1,6 @@
 # 閉域RAGアプリケーション サンプルリポジトリ
 
-[![Deploy to Azure Web Apps](https://github.com/matakaha/internal_rag_Application_sample_repo/workflows/Deploy%20to%20Azure%20Web%20Apps/badge.svg)](https://github.com/matakaha/internal_rag_Application_sample_repo/actions)
+[![Deploy to Azure Functions](https://github.com/matakaha/internal_rag_Application_sample_repo/workflows/Deploy%20to%20Azure%20Functions/badge.svg)](https://github.com/matakaha/internal_rag_Application_sample_repo/actions)
 
 このリポジトリは、Azure閉域ネットワーク上で動作するRAG（Retrieval-Augmented Generation）チャットアプリケーションのサンプルです。初学者向けの教育用リポジトリとして、ステップバイステップで学習できるように構成されています。
 
@@ -14,7 +14,8 @@
 ### 特徴
 
 - ✅ **閉域ネットワーク対応**: Private Endpointを使用した完全閉域構成
-- ✅ **Pythonベース**: Flask + Azure OpenAI + Azure AI Searchによるシンプルな実装
+- ✅ **Pythonベース**: Azure Functions (Python v2) + Azure OpenAI + Azure AI Searchによるサーバーレス実装
+- ✅ **Flex Consumption**: コスト効率的なFlexible Consumptionプラン対応
 - ✅ **CI/CD統合**: GitHub Actionsによる自動デプロイ
 - ✅ **教育向け**: ステップバイステップで理解できる構成
 - ✅ **実践的**: 環境省レッドリスト(絶滅危惧種データ)を活用したRAGシステム
@@ -33,9 +34,16 @@
 │           └────────┬───────────────┘                       │
 │                    │                                       │
 │         ┌──────────▼─────────────┐                        │
-│         │  App Service           │                        │
+│         │  Azure Functions       │                        │
+│         │  (Flex Consumption)    │                        │
 │         │  (vNet統合)            │                        │
-│         │  Pythonチャットアプリ   │                        │
+│         │                        │                        │
+│         │  ┌──────────────────┐  │                        │
+│         │  │ HTTP Trigger     │  │                        │
+│         │  │ - GET  /         │  │                        │
+│         │  │ - POST /api/chat │  │                        │
+│         │  │ - GET  /health   │  │                        │
+│         │  └──────────────────┘  │                        │
 │         └────────────────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
                        │
@@ -48,30 +56,46 @@
               └─────────────────┘
 ```
 
+### アーキテクチャの利点
+
+- **サーバーレス**: 使用量に応じた自動スケーリング、アイドル時のコスト削減
+- **Flex Consumption**: 従量課金でコスト効率的、高速コールドスタート
+- **完全閉域**: Private Endpointによるセキュアな通信
+- **Python v2モデル**: 最新のAzure Functions プログラミングモデル
+
 ## 📁 ディレクトリ構造
 
 ```
 internal_rag_Application_sample_repo/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml              # GitHub Actionsワークフロー
+│       ├── deploy.yml              # GitHub Actionsワークフロー(App Service用・旧)
+│       └── deploy-functions.yml    # Azure Functions向けワークフロー
 ├── scripts/
 │   ├── setup-runner.ps1            # Self-hosted Runner起動スクリプト
-│   └── cleanup-runner.ps1          # Runnerクリーンアップスクリプト
-├── src/
-│   ├── app.py                      # Flaskアプリケーション(RAGロジック)
+│   ├── cleanup-runner.ps1          # Runnerクリーンアップスクリプト
+│   ├── create-index.ps1            # AI Searchインデックス作成
+│   ├── create-datasource.ps1       # データソース作成
+│   └── create-indexer.ps1          # インデクサー作成
+├── src/                            # 旧アーキテクチャ(App Service)
+│   ├── app.py                      # Flaskアプリケーション
 │   └── templates/
 │       └── index.html              # チャットUI
+├── static/                         # Functions用静的ファイル
+│   └── index.html                  # チャットUI(Functions向け)
 ├── docs/
 │   ├── step01-setup-environment.md # Step 1: 環境準備
 │   ├── step02-data-preparation.md  # Step 2: データ準備
 │   ├── step03-indexing.md          # Step 3: AI Searchインデックス作成
 │   ├── step04-deploy-app.md        # Step 4: アプリケーションデプロイ
 │   └── step05-testing.md           # Step 5: テストと運用
+├── function_app.py                 # Azure Functions アプリケーション(v2)
+├── host.json                       # Functions ホスト設定
+├── local.settings.json             # ローカル開発設定
+├── .funcignore                     # デプロイ除外ファイル
 ├── .env.sample                     # 環境変数サンプル
 ├── .gitignore
 ├── requirements.txt                # Python依存関係
-├── startup.sh                      # アプリ起動スクリプト
 ├── LICENSE
 └── README.md                       # このファイル
 ```
@@ -87,16 +111,18 @@ internal_rag_Application_sample_repo/
    - Azure OpenAI (Private Endpoint)
    - Azure AI Search (Private Endpoint)
    - Azure Storage Account
-   - App Service (vNet統合)
+   - Azure Functions (Flex Consumption, vNet統合)
 
 2. **[internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)**
    - Key Vault
    - Self-hosted Runner用Subnet
    - GitHub Actions設定
+   - Azure Container Registry (カスタムGitHub Runnerイメージ)
 
 ### 必要なツール
 
 - Azure CLI (`az --version`)
+- Azure Functions Core Tools v4 (`func --version`)
 - Python 3.11以上
 - Git
 - GitHub アカウント
@@ -147,25 +173,50 @@ git clone https://github.com/matakaha/internal_rag_Application_sample_repo.git
 cd internal_rag_Application_sample_repo
 
 # 仮想環境の作成
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
 # 依存関係のインストール
 pip install -r requirements.txt
 
-# 環境変数の設定
+# Azure Functions Core Toolsのインストール(未インストールの場合)
+# https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-run-local
+
+# local.settings.jsonを編集してAzureリソース情報を設定
+# または.envファイルを使用
 cp .env.sample .env
-# .envファイルを編集してAzureリソース情報を設定
 ```
 
 ### ローカル実行
 
 ```powershell
-# Flask開発サーバーで起動
-python src/app.py
+# Azure Functionsローカルランタイムで起動
+func start
+
+# または
+python -m azure.functions.worker
 ```
 
-ブラウザで `http://localhost:8000` にアクセス
+ブラウザで `http://localhost:7071` にアクセス
+
+### ローカルデバッグ
+
+VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to Python Functions",
+      "type": "python",
+      "request": "attach",
+      "port": 9091,
+      "preLaunchTask": "func: host start"
+    }
+  ]
+}
+```
 
 ## 🔐 セキュリティ
 
@@ -188,16 +239,17 @@ python src/app.py
 
 ### バックエンド
 - Python 3.11
-- Flask 3.0.0
-- Gunicorn 21.2.0
+- Azure Functions (Python v2 Programming Model)
+- Azure Functions Extension Bundle 4.x
 
 ### Azure サービス
-- Azure App Service
+- Azure Functions (Flex Consumption Plan)
 - Azure OpenAI Service
 - Azure AI Search
 - Azure Blob Storage
 - Azure Key Vault
 - Azure Virtual Network
+- Azure Application Insights (監視)
 
 ### CI/CD
 - GitHub Actions
@@ -205,15 +257,21 @@ python src/app.py
 
 ## 💰 コスト見積もり
 
-月額概算コスト: ¥15,000〜25,000
+月額概算コスト: ¥8,000〜18,000
 
 | サービス | 構成 | 月額概算 |
 |---------|------|---------|
-| App Service | Basic B1 | ¥5,000 |
+| Azure Functions | Flex Consumption | ¥1,000〜3,000 |
 | Azure OpenAI | GPT-4 従量課金 | ¥3,000〜10,000 |
 | AI Search | Basic | ¥7,000 |
 | Storage Account | Standard | ¥500 |
+| Application Insights | 従量課金 | ¥500 |
 | その他(vNet, DNS等) | - | ¥500 |
+
+> 💡 **Flex Consumptionの利点**: 
+> - アイドル時はほぼコストゼロ
+> - 実行時間とメモリ使用量に応じた従量課金
+> - App Service (Basic B1: ¥5,000/月)と比較して最大60%のコスト削減
 
 > 💡 **ヒント**: 学習終了後はリソースグループを削除してコストを節約しましょう!
 

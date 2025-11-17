@@ -1,0 +1,40 @@
+# .funcignore - Azure Functionsデプロイ時に除外するファイル/フォルダ
+
+.git/
+.github/
+.vscode/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 開発環境のみで使用
+local.settings.json
+.env
+.env.sample
+
+# ドキュメントとテスト
+docs/
+tests/
+*.md
+LICENSE
+
+# データファイル
+data/
+scripts/
+
+# 旧アーキテクチャのファイル
+src/app.py
+src/templates/
+startup.sh
+Dockerfile.runner
+
+# その他
+.gitignore
+*.log
+*.zip
