@@ -52,13 +52,13 @@ jobs:
 
           # Container Instance作成
           # Azure Container Registry (ACR)のカスタムGitHub Runnerイメージを使用
+          # Managed Identityを使用してACRにアクセス
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
-            --registry-login-server acrinternalragdev.azurecr.io \
-            --registry-username acrinternalragdev \
-            --registry-password $(az acr credential show --name acrinternalragdev --query "passwords[0].value" -o tsv) \
+            --acr-identity system \
+            --assign-identity --scope $(az acr show --name acrinternalragdev --query id -o tsv) \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
