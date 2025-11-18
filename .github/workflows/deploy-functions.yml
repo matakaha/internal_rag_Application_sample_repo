@@ -57,38 +57,40 @@ jobs:
 
           echo "RUNNER_TOKEN取得完了"
 
-          # 既存のContainer Instanceを停止
-          echo "Stopping existing container instance..."
-          az container stop \
+          # 既存のContainer Instanceの存在確認
+          echo "Checking for existing container instance..."
+          EXISTING=$(az container list \
             --resource-group $RESOURCE_GROUP \
-            --name $CONTAINER_GROUP_NAME || true
+            --query "[?name=='$CONTAINER_GROUP_NAME'].name" -o tsv)
           
-          echo "Waiting for container to stop..."
-          sleep 10
+          if [ -n "$EXISTING" ]; then
+            echo "Existing container found. Stopping and deleting..."
+            
+            # 既存のContainer Instanceを停止
+            az container stop \
+              --resource-group $RESOURCE_GROUP \
+              --name $CONTAINER_GROUP_NAME || true
+            
+            echo "Waiting for container to stop..."
+            sleep 5
+            
+            # Container Instance削除
+            az container delete \
+              --resource-group $RESOURCE_GROUP \
+              --name $CONTAINER_GROUP_NAME \
+              --yes
+            
+            echo "Waiting for deletion to complete..."
+            sleep 5
+          else
+            echo "No existing container found. Will create new one."
+          fi
 
-          # Container Instance再起動(環境変数を更新して起動)
-          # Private Endpoint経由でACRにアクセス(vNet内部通信)
-          
-          echo "Restarting GitHub Runner container with updated token..."
-          az container start \
-            --resource-group $RESOURCE_GROUP \
-            --name $CONTAINER_GROUP_NAME \
-            --no-wait
-          
-          # 環境変数を更新するため、一度削除して再作成が必要
-          # (ACIは環境変数の動的更新をサポートしていないため)
-          echo "Updating container with new environment variables..."
-          az container delete \
-            --resource-group $RESOURCE_GROUP \
-            --name $CONTAINER_GROUP_NAME \
-            --yes
-          
-          sleep 5
-          
           # ACRのリソースIDを取得
           ACR_ID=$(az acr show --name acrinternalragdev --resource-group $RESOURCE_GROUP --query id -o tsv)
           
-          # Container Instance再作成(System Assigned Managed Identity付き)
+          # Container Instance作成(System Assigned Managed Identity付き)
+          # Private Endpoint経由でACRにアクセス(vNet内部通信)
           echo "Creating container with Managed Identity..."
           az container create \
             --resource-group $RESOURCE_GROUP \
