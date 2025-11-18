@@ -89,14 +89,14 @@ jobs:
           ACR_ID=$(az acr show --name acrinternalragdev --resource-group $RESOURCE_GROUP --query id -o tsv)
           
           # Container Instance作成(System Assigned Managed Identity付き)
-          # Private Endpoint経由でACRにアクセス(vNet内部通信)
+          # Private Endpoint経璁でACRにアクセス(vNet内部通信)
           echo "Creating container with Managed Identity..."
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
-            --assign-identity [system] \
-            --acr-identity [system] \
+            --assign-identity \
+            --acr-identity system \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
