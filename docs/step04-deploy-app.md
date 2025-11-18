@@ -106,20 +106,25 @@ Write-Host "Application (client) ID: $($app.appId)"
 $githubOrg = "matakaha"  # あなたのGitHubユーザー名/組織名
 $githubRepo = "internal_rag_Application_sample_repo"  # リポジトリ名
 
-# Federated Credentialを作成
+# Federated Credentialを一時JSONファイルとして作成
 $credentialName = "github-actions-main"
-$credential = @{
+$credentialPath = "federated-credential.json"
+@{
     name = $credentialName
     issuer = "https://token.actions.githubusercontent.com"
     subject = "repo:$githubOrg/${githubRepo}:ref:refs/heads/main"
     audiences = @("api://AzureADTokenExchange")
-} | ConvertTo-Json
+} | ConvertTo-Json -Depth 10 | Out-File -FilePath $credentialPath -Encoding UTF8
 
+# Federated credentialを作成
 az ad app federated-credential create `
     --id $app.appId `
-    --parameters $credential
+    --parameters "@$credentialPath"
 
 Write-Host "Federated credential created successfully"
+
+# 一時ファイルを削除
+Remove-Item $credentialPath -ErrorAction SilentlyContinue
 ```
 
 #### 2.3. Key Vaultアクセス権限の付与

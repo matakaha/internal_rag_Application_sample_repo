@@ -416,9 +416,9 @@ try {
 
 ### 5. インデクサーの実行とステータス確認
 
-> ⚠️ **Private Endpoint環境の注意**: AI Searchが`publicNetworkAccess: Disabled`に設定されている場合、ローカル環境からREST APIでのステータス確認や検索テストはできません。Azure CLIコマンドまたはAzure Portalを使用してください。
+> ⚠️ **重要**: Azure CLIでは現時点でインデクサーのステータス確認コマンドがサポートされていません。ステータス確認はREST APIまたはAzure Portalを使用してください。
 
-#### Azure CLI でインデクサーを実行・確認(推奨)
+#### Azure CLI でインデクサーを実行
 
 ```powershell
 # インデクサーを実行
@@ -427,18 +427,11 @@ az search indexer run `
     --service-name $SEARCH_SERVICE `
     --name blob-indexer
 
-Write-Host "Indexer started. Waiting for completion..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
-
-# インデクサーのステータスを確認
-az search indexer show-status `
-    --resource-group $RESOURCE_GROUP `
-    --service-name $SEARCH_SERVICE `
-    --name blob-indexer `
-    --query "lastResult" -o json
+Write-Host "Indexer started. Processing..." -ForegroundColor Yellow
+Write-Host "ステータスはAzure PortalまたはREST APIで確認してください" -ForegroundColor Cyan
 ```
 
-#### REST API で実行する場合(Public Access有効時のみ)
+#### REST APIでステータス確認(Private Endpoint環境では不可)
 
 ```powershell
 # インデクサーを手動実行
@@ -458,10 +451,18 @@ try {
     $status = Invoke-RestMethod -Uri $statusUri -Headers $headers
     $status.lastResult | Format-List
 } catch {
-    Write-Host "Error: Private Endpoint環境ではAzure CLIを使用してください" -ForegroundColor Yellow
-    Write-Host "実行: az search indexer show-status --resource-group `$RESOURCE_GROUP --service-name `$SEARCH_SERVICE --name blob-indexer" -ForegroundColor Cyan
+    Write-Host "Error: Private Endpoint環境ではローカルからアクセスできません" -ForegroundColor Yellow
+    Write-Host "Azure Portalでインデクサーのステータスを確認してください" -ForegroundColor Cyan
 }
 ```
+
+#### Azure Portalでステータス確認(推奨)
+
+1. Azure Portal (https://portal.azure.com) を開く
+2. AI Search リソースに移動
+3. 左メニューから「インデクサー」を選択
+4. `blob-indexer` をクリック
+5. 実行履歴とステータスを確認
 
 ### 6. インデックスの確認
 
