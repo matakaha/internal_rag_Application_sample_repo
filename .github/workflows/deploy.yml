@@ -96,6 +96,7 @@ jobs:
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
             --assign-identity [system] \
+            --acr-identity [system] \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
