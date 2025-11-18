@@ -163,9 +163,30 @@ Write-Host "ACR access granted successfully"
 Write-Host "Service Principal can now pull images from $acrName"
 ```
 
-**重要**: この権限により、Container InstanceがPrivate Endpoint保護されたACRからGitHub Runnerイメージを安全にpullできるようになります。
+**重要**: この権限により、サービスプリンシパルがACRからイメージをpullできるようになります。
 
-#### 2.5. GitHub Secretsの設定
+#### 2.5. User Access Administrator権限の付与
+
+ワークフロー内でContainer InstanceのManaged IdentityにACR Pull権限を動的に付与するため、サービスプリンシパルに`User Access Administrator`ロールを付与します。
+
+```powershell
+# サービスプリンシパルにUser Access Administratorロールを付与
+az role assignment create `
+    --assignee $app.appId `
+    --role "User Access Administrator" `
+    --scope "/subscriptions/$subscriptionId/resourceGroups/rg-internal-rag-dev"
+
+Write-Host "User Access Administrator role granted successfully"
+```
+
+**重要**: この権限により、ワークフロー実行時に以下が可能になります:
+- Container InstanceのManaged Identityを作成
+- そのManaged IdentityにACR Pullロールを付与
+- Private Endpoint保護されたACRからGitHub Runnerイメージを安全にpull
+
+> 📝 **Note**: この権限はリソースグループスコープに限定されており、他のIDに権限を付与する操作はこのリソースグループ内のリソースに対してのみ可能です。
+
+#### 2.6. GitHub Secretsの設定
 
 ```powershell
 # 必要な情報を取得
@@ -194,7 +215,7 @@ gh secret set AZURE_SEARCH_INDEX --body "redlist-index"
 gh secret list
 ```
 
-#### 2.6. 設定内容の確認
+#### 2.7. 設定内容の確認
 
 以下のコマンドでFederated Identity設定が正しく行われたか確認します:
 
@@ -215,7 +236,7 @@ Write-Host "Tenant ID: $tenantId"
 Write-Host "Subscription ID: $subscriptionId"
 ```
 
-#### 2.7. GitHub Secretsの確認
+#### 2.8. GitHub Secretsの確認
 
 以下のSecretsが設定されているか確認します:
 
