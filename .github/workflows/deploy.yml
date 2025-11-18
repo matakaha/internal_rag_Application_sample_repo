@@ -88,15 +88,47 @@ jobs:
           # ACRのリソースIDを取得
           ACR_ID=$(az acr show --name acrinternalragdev --resource-group $RESOURCE_GROUP --query id -o tsv)
           
-          # Container Instance作成(System Assigned Managed Identity付き)
-          # Private Endpoint経璁でACRにアクセス(vNet内部通信)
-          echo "Creating container with Managed Identity..."
+          # User Assigned Managed Identityを作成
+          IDENTITY_NAME="id-aci-runner-${GITHUB_RUN_ID}"
+          echo "Creating User Assigned Managed Identity..."
+          az identity create \
+            --name $IDENTITY_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --location $LOCATION
+          
+          # IdentityのIDを取得
+          IDENTITY_ID=$(az identity show \
+            --name $IDENTITY_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --query id -o tsv)
+          
+          IDENTITY_PRINCIPAL_ID=$(az identity show \
+            --name $IDENTITY_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --query principalId -o tsv)
+          
+          echo "Identity Principal ID: $IDENTITY_PRINCIPAL_ID"
+          
+          # IdentityにACR Pull権限を付与
+          echo "Assigning AcrPull role to User Assigned Identity..."
+          az role assignment create \
+            --assignee $IDENTITY_PRINCIPAL_ID \
+            --role AcrPull \
+            --scope $ACR_ID
+          
+          # 権限の伝播を待つ
+          echo "Waiting for role assignment to propagate..."
+          sleep 30
+          
+          # User Assigned Managed Identityを使ってコンテナ作成
+          # Private Endpoint経由でACRにアクセス(vNet内部通信)
+          echo "Creating GitHub Runner container with ACR image..."
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
-            --assign-identity \
-            --acr-identity system \
+            --assign-identity $IDENTITY_ID \
+            --acr-identity $IDENTITY_ID \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
@@ -110,21 +142,6 @@ jobs:
               GITHUB_TOKEN=${{ secrets.GH_PAT }} \
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_LABELS=self-hosted,azure,vnet
-          
-          # Managed IdentityのPrincipal IDを取得
-          PRINCIPAL_ID=$(az container show \
-            --resource-group $RESOURCE_GROUP \
-            --name $CONTAINER_GROUP_NAME \
-            --query identity.principalId -o tsv)
-          
-          echo "Managed Identity Principal ID: $PRINCIPAL_ID"
-          
-          # Managed IdentityにACR Pull権限を付与
-          echo "Assigning AcrPull role to Managed Identity..."
-          az role assignment create \
-            --assignee $PRINCIPAL_ID \
-            --role AcrPull \
-            --scope $ACR_ID
           
           # ACIが起動するまで少し待機
           sleep 15
