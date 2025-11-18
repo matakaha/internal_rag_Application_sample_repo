@@ -144,21 +144,26 @@ az keyvault set-policy `
 Write-Host "Key Vault access granted successfully"
 ```
 
-#### 2.4. Azure Container Registry (ACR) 管理者アカウントの有効化
+#### 2.4. User Access Administrator権限の付与
 
-ワークフロー内でContainer InstanceがACRからGitHub Runnerイメージをpullできるように、ACR管理者アカウントを有効化します。
+ワークフロー内でContainer InstanceのManaged IdentityにACR Pull権限を動的に付与するため、サービスプリンシパルに`User Access Administrator`ロールを付与します。
 
 ```powershell
-# ACR管理者アカウントを有効化
-$acrName = "acrinternalragdev"  # あなたのACR名
-az acr update --name $acrName --admin-enabled true
+# サービスプリンシパルにUser Access Administratorロールを付与
+az role assignment create `
+    --assignee $app.appId `
+    --role "User Access Administrator" `
+    --scope "/subscriptions/$subscriptionId/resourceGroups/rg-internal-rag-dev"
 
-Write-Host "ACR admin account enabled successfully"
+Write-Host "User Access Administrator role granted successfully"
 ```
 
-**重要**: ワークフロー内でContainer InstanceがACR管理者認証情報を使ってイメージをpullできるようになります。
+**重要**: この権限により、ワークフロー実行時に以下が可能になります:
+- Container InstanceのManaged Identityを作成
+- そのManaged IdentityにACR Pullロールを付与
+- Private Endpoint保護されたACRからGitHub Runnerイメージを安全にpull(vNet内部通信)
 
-> 📝 **Note**: ACR管理者アカウントはセキュリティ上推奨されませんが、vNet内からのアクセスに限定されているため、リスクは軽減されています。
+> 📝 **Note**: この権限はリソースグループスコープに限定されており、他のIDに権限を付与する操作はこのリソースグループ内のリソースに対してのみ可能です。Container InstanceはPrivate Endpoint経由でACRにアクセスするため、ACRのパブリック公開は不要です。
 
 #### 2.5. GitHub Secretsの設定
 
@@ -249,7 +254,7 @@ env:
 
 **重要**: このワークフローは、Azure Container Registry (ACR)に格納されたカスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)を使用します。このイメージには、GitHub Runnerと必要なツールがプリインストールされており、起動が高速で安定しています。
 
-**ACR認証方式**: ワークフローでは、ACR管理者認証情報を使用してContainer InstanceからACRにアクセスします。これにより、Private Endpoint保護されたACRからGitHub Runnerイメージを安全にpullできます。
+**ACR認証方式**: ワークフローでは、Container InstanceのManaged Identityを使用してACRにアクセスします。Container InstanceとACRのPrivate Endpointは同じvNet内にあるため、vNet内部通信で安全にイメージをpullできます。ACRのパブリック公開は不要です。
 
 必要に応じて、環境変数を自分の環境に合わせて編集します。
 

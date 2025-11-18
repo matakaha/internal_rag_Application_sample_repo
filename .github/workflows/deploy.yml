@@ -50,22 +50,33 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token" \
             | jq -r .token)
 
+          # 既存のContainer Instanceを削除(存在する場合)
+          echo "Checking for existing container instance..."
+          EXISTING=$(az container list \
+            --resource-group $RESOURCE_GROUP \
+            --query "[?name=='$CONTAINER_GROUP_NAME'].name" -o tsv)
+          
+          if [ ! -z "$EXISTING" ]; then
+            echo "Deleting existing container instance..."
+            az container delete \
+              --resource-group $RESOURCE_GROUP \
+              --name $CONTAINER_GROUP_NAME \
+              --yes
+            
+            echo "Waiting for deletion to complete..."
+            sleep 10
+          fi
+
           # Container Instance作成
           # Azure Container Registry (ACR)のカスタムGitHub Runnerイメージを使用
-          # ACR管理者認証情報を使用してイメージをpull
+          # Private Endpoint経由でACRにアクセス(vNet内部通信)
           
-          echo "Getting ACR credentials..."
-          ACR_USERNAME=$(az acr credential show --name acrinternalragdev --query username -o tsv)
-          ACR_PASSWORD=$(az acr credential show --name acrinternalragdev --query passwords[0].value -o tsv)
-          
-          echo "Creating GitHub Runner container with ACR image..."
+          echo "Creating GitHub Runner container with ACR image via Private Endpoint..."
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
             --image acrinternalragdev.azurecr.io/github-runner:latest \
-            --registry-login-server acrinternalragdev.azurecr.io \
-            --registry-username $ACR_USERNAME \
-            --registry-password $ACR_PASSWORD \
+            --acr-identity system \
             --os-type Linux \
             --vnet $VNET_NAME \
             --subnet $SUBNET_NAME \
