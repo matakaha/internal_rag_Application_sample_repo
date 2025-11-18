@@ -15,7 +15,7 @@
 
 - ✅ **閉域ネットワーク対応**: Private Endpointを使用した完全閉域構成
 - ✅ **モダンスタック**: Node.js (Express) フロントエンド + Azure Functions (Python v2) バックエンド
-- ✅ **Flex Consumption**: コスト効率的なFlexible Consumptionプラン対応
+- ✅ **コスト最適化**: 開発環境は共有AppServicePlan B1、本番環境はPremium Plan推奨
 - ✅ **CI/CD統合**: GitHub Actionsによる自動デプロイ
 - ✅ **教育向け**: ステップバイステップで理解できる構成
 - ✅ **実践的**: 環境省レッドリスト(絶滅危惧種データ)を活用したRAGシステム
@@ -33,7 +33,7 @@
 │           │                        │                       │
 │           │         ┌──────────────▼─────────────┐        │
 │           │         │  Azure Functions           │        │
-│           │         │  (Flex Consumption)        │        │
+│           │         │  (AppServicePlan B1)       │        │
 │           │         │  (vNet統合) [バックエンド] │        │
 │           │         │  - POST /api/chat          │        │
 │           │         │  - GET  /health            │        │
@@ -62,8 +62,8 @@
 ### アーキテクチャの利点
 
 - **フロントエンド/バックエンド分離**: Node.js (UI) + Python (RAGロジック)の適材適所
-- **サーバーレス**: 使用量に応じた自動スケーリング、アイドル時のコスト削減
-- **Flex Consumption**: 従量課金でコスト効率的、高速コールドスタート
+- **コスト最適化**: 開発環境では共有AppServicePlanでコスト削減
+- **本番対応**: Premium Plan (EP1以上)で高パフォーマンスとvNet統合を実現
 - **完全閉域**: Private Endpointによるセキュアな通信
 - **Python v2モデル**: 最新のAzure Functions プログラミングモデル
 
@@ -107,7 +107,9 @@ internal_rag_Application_sample_repo/
 
 > 📝 **Note**: このプロジェクトはフロントエンドとバックエンドを分離した構成です。
 > - **フロントエンド**: `src/` ディレクトリのNode.js (Express)アプリをAzure Web Apps (App Service)にデプロイ
-> - **バックエンド**: ルートの`function_app.py`をAzure Functions (Flex Consumption)にデプロイ
+> - **バックエンド**: ルートの`function_app.py`をAzure Functionsにデプロイ
+> - **開発環境**: フロントエンドと同じAppServicePlan B1を使用してコスト最適化
+> - **本番環境**: Premium Plan (EP1以上)を推奨。vNet統合と高パフォーマンスを実現
 > - ルートにFunctionsコードがあるのは、Azure Functionsの標準プロジェクト構造に従っています。
 
 ## 🚀 クイックスタート
@@ -121,7 +123,8 @@ internal_rag_Application_sample_repo/
    - Azure OpenAI (Private Endpoint)
    - Azure AI Search (Private Endpoint)
    - Azure Storage Account
-   - Azure Functions (Flex Consumption, vNet統合)
+   - Azure Functions (AppServicePlan B1共有、vNet統合)
+   - App Service Plan (B1) - フロントエンド/バックエンド共有
 
 2. **[internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)**
    - Key Vault
@@ -275,7 +278,8 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 - Azure Functions Extension Bundle 4.x
 
 ### Azure サービス
-- Azure Functions (Flex Consumption Plan)
+- Azure Functions (AppServicePlan B1 / Premium Plan)
+- Azure App Service (Node.js/Express フロントエンド)
 - Azure OpenAI Service
 - Azure AI Search
 - Azure Blob Storage
@@ -289,26 +293,41 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 
 ## 💰 コスト見積もり
 
-月額概算コスト: ¥8,000〜18,000
+### 開発環境コスト
+月額概算コスト: ¥16,000〜26,000
 
 | サービス | 構成 | 月額概算 |
-|---------|------|---------||
-| Azure Functions (バックエンド) | Flex Consumption | ￥1,000〜3,000 |
-| App Service (フロントエンド) | Basic B1 | ￥5,000 |
+|---------|------|---------|
+| App Service Plan (B1) | フロントエンド/バックエンド共有 | ￥5,000 |
 | Azure OpenAI | GPT-4 従量課金 | ￥3,000〜10,000 |
 | AI Search | Basic | ￥7,000 |
 | Storage Account | Standard | ￥500 |
 | Application Insights | 従量課金 | ￥500 |
 | その他(vNet, DNS等) | - | ￥500 |
 
-> 💡 **Flex Consumptionの利点 (バックエンドAPI)**: 
-> - アイドル時はほぼコストゼロ
-> - 実行時間とメモリ使用量に応じた従量課金
-> - 高速コールドスタートと自動スケーリング
+### 本番環境コスト (Premium Plan推奨)
+月額概算コスト: ¥30,000〜40,000
 
-> 💡 **フロント/バック分離の利点**: 
-> - UIとAPIを独立してスケーリング可能
-> - バックエンドはFunctionsで従量課金、フロントエンドはApp Serviceで安定配信
+| サービス | 構成 | 月額概算 |
+|---------|------|---------|
+| App Service Plan (EP1) | Premium Plan (フロントエンド) | ￥14,000 |
+| Azure Functions Plan (EP1) | Premium Plan (バックエンド) | ￥14,000 |
+| Azure OpenAI | GPT-4 従量課金 | ￥3,000〜10,000 |
+| AI Search | Basic | ￥7,000 |
+| Storage Account | Standard | ￥500 |
+| Application Insights | 従量課金 | ￥500 |
+| その他(vNet, DNS等) | - | ￥500 |
+
+> 💡 **開発環境のコスト最適化**: 
+> - フロントエンドとバックエンドで同じAppServicePlan B1を共有
+> - 常時起動で安定した開発環境を提供
+> - 学習用途に最適な構成
+
+> 💡 **本番環境ではPremium Plan (EP1以上) を推奨**: 
+> - vNet統合によるPrivate Endpoint完全対応
+> - 高パフォーマンスと自動スケーリング
+> - 常時稼働でコールドスタートなし
+> - エンタープライズグレードのセキュリティ
 
 > 💡 **ヒント**: 学習終了後はリソースグループを削除してコストを節約しましょう!
 
@@ -368,7 +387,8 @@ MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
 
 ### Azure ドキュメント
 - [Azure Functions](https://learn.microsoft.com/ja-jp/azure/azure-functions/)
-- [Azure Functions Flex Consumption](https://learn.microsoft.com/ja-jp/azure/azure-functions/flex-consumption-plan)
+- [Azure Functions Premium Plan](https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-premium-plan)
+- [Azure App Service](https://learn.microsoft.com/ja-jp/azure/app-service/)
 - [Azure OpenAI Service](https://learn.microsoft.com/ja-jp/azure/ai-services/openai/)
 - [Azure AI Search](https://learn.microsoft.com/ja-jp/azure/search/)
 - [GitHub Actions for Azure](https://learn.microsoft.com/ja-jp/azure/developer/github/github-actions)

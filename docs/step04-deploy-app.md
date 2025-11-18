@@ -1,6 +1,6 @@
 # Step 4: アプリケーションデプロイ
 
-このステップでは、GitHub Actionsを使用してPythonチャットアプリケーションをAzure Functions (Flex Consumption)にデプロイします。
+このステップでは、GitHub Actionsを使用してPythonチャットアプリケーションをAzure Functions (AppServicePlan)にデプロイします。
 
 ## 📚 学習目標
 
@@ -60,12 +60,20 @@ az functionapp config appsettings set `
         AzureWebJobsFeatureFlags=EnableWorkerIndexing `
         FUNCTIONS_WORKER_RUNTIME=python
 
-# Pythonバージョンの確認(Flex Consumptionでは自動設定)
+# Pythonバージョンの確認
 az functionapp show `
     --resource-group $RESOURCE_GROUP `
     --name $FUNCTIONAPP_NAME `
     --query "siteConfig.linuxFxVersion" -o tsv
+
+# AppServicePlanの確認
+az functionapp show `
+    --resource-group $RESOURCE_GROUP `
+    --name $FUNCTIONAPP_NAME `
+    --query "appServicePlanId" -o tsv
 ```
+
+> 📝 **Note**: 開発環境ではAppServicePlan B1をフロントエンドと共有、本番環境ではPremium Plan (EP1以上)を推奨します。
 
 ### 2. Federated Identity (OIDC) 認証の設定
 

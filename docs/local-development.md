@@ -1,6 +1,8 @@
 # Azure Functions ローカル開発ガイド
 
-このガイドでは、Azure Functions Flex Consumptionアプリケーションをローカル環境で開発・テストする手順を説明します。
+このガイドでは、Azure Functionsアプリケーションをローカル環境で開発・テストする手順を説明します。
+
+> 📝 **Note**: 開発環境ではAppServicePlan B1、本番環境ではPremium Plan (EP1以上)を推奨します。
 
 ## 前提条件
 

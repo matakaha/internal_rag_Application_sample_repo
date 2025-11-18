@@ -1,6 +1,9 @@
 """
-Azure Functions Flex Consumption向け閉域RAGチャットアプリケーション
-Python v2プログラミングモデルを使用（非同期対応版）
+Azure Functions閉域RAGチャットアプリケーション
+Python v2プログラミングモデルを使用(非同期対応版)
+
+開発環境: AppServicePlan B1 (フロントエンド/バックエンド共有)
+本番環境: Premium Plan (EP1以上) 推奨
 """
 import azure.functions as func
 import logging

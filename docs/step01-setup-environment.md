@@ -24,7 +24,8 @@
 - Azure OpenAI Service (Private Endpoint付き)
 - Azure AI Search (Private Endpoint付き)
 - Azure Storage Account
-- Azure Functions (Flex Consumption, vNet統合済み)
+- Azure Functions (AppServicePlan B1共有、vNet統合済み)
+- App Service Plan (B1) - フロントエンド/バックエンド共有
 
 ✅ **[internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)** が完了していること
 
@@ -421,6 +422,8 @@ gh secret set AZURE_SEARCH_INDEX -b "redlist-index"
 ### 8. Azure Functions設定の更新
 
 Azure Functionsに環境変数を設定します。`.env` ファイルから値を読み込んで一括設定できます。
+
+> 📝 **Note**: 開発環境ではAppServicePlan B1を使用し、本番環境ではPremium Plan (EP1以上)を推奨します。
 
 #### 自動設定スクリプト(推奨)
 
