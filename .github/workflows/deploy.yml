@@ -173,27 +173,29 @@ jobs:
           echo "::add-mask::$PUBLISH_PROFILE"
           echo "PUBLISH_PROFILE=$PUBLISH_PROFILE" >> $GITHUB_ENV
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: src/package.json
 
       - name: Install dependencies
+        working-directory: ./src
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          npm ci
 
       - name: Build application
         run: |
           # アプリケーションのビルド処理
-          echo "Building application..."
+          echo "Building Node.js application..."
 
       - name: Deploy to Azure Web Apps
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.WEBAPP_NAME }}
           publish-profile: ${{ env.PUBLISH_PROFILE }}
-          package: .
+          package: ./src
 
   cleanup:
     needs: [setup-runner, build-and-deploy]

@@ -1,6 +1,6 @@
 # Step 4: アプリケーションデプロイ
 
-このステップでは、GitHub Actionsを使用してPythonチャットアプリケーションをAzure App Serviceにデプロイします。
+このステップでは、GitHub Actionsを使用してPythonチャットアプリケーションをAzure Functions (Flex Consumption)にデプロイします。
 
 ## 📚 学習目標
 
@@ -8,7 +8,7 @@
 
 - GitHub Actionsワークフローの理解
 - Self-hosted Runnerを使用した閉域デプロイ
-- App Service設定の構成
+- Azure Functions設定の構成
 - CI/CDパイプラインの実行
 - デプロイの確認とトラブルシューティング
 
@@ -25,16 +25,16 @@
 
 ### 1. アプリケーション設定の確認
 
-#### App Service設定の確認
+#### Azure Functions設定の確認
 
 ```powershell
 $RESOURCE_GROUP = "rg-internal-rag-dev"
-$WEBAPP_NAME = "<your-webapp-name>"
+$FUNCTIONAPP_NAME = "<your-functionapp-name>"
 
 # 現在の設定を確認
-az webapp config appsettings list `
+az functionapp config appsettings list `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $FUNCTIONAPP_NAME `
     --output table
 ```
 
@@ -46,28 +46,25 @@ az webapp config appsettings list `
 | `AZURE_OPENAI_DEPLOYMENT` | デプロイメント名 | Step 1で設定済み |
 | `AZURE_SEARCH_ENDPOINT` | AI Searchエンドポイント | Step 1で設定済み |
 | `AZURE_SEARCH_INDEX` | インデックス名 | Step 3で作成 |
-| `SCM_DO_BUILD_DURING_DEPLOYMENT` | ビルド設定 | `true` |
-| `WEBSITE_HTTPLOGGING_RETENTION_DAYS`(下記追加設定の結果として設定されますので、のちほど確認) | ログ保持日数 | `7` |
+| `AzureWebJobsFeatureFlags` | Functions機能フラグ | `EnableWorkerIndexing` |
+| `FUNCTIONS_WORKER_RUNTIME` | ランタイム | `python` |
 
 #### 追加設定
 
 ```powershell
-# ビルド設定を有効化
-az webapp config appsettings set `
+# Functions固有の設定
+az functionapp config appsettings set `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $FUNCTIONAPP_NAME `
     --settings `
-        SCM_DO_BUILD_DURING_DEPLOYMENT=true `
-        WEBSITE_HTTPLOGGING_RETENTION_DAYS=7
+        AzureWebJobsFeatureFlags=EnableWorkerIndexing `
+        FUNCTIONS_WORKER_RUNTIME=python
 
-# スタートアップコマンドを設定
-az webapp config set `
+# Pythonバージョンの確認(Flex Consumptionでは自動設定)
+az functionapp show `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
-    --startup-file "gunicorn --bind=0.0.0.0:8000 --workers=4 --timeout=600 src.app:app"
-
-# Pythonバージョンを設定(PowerShellの解析を停止するため --% を使用)
-az webapp config set --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME --% --linux-fx-version "PYTHON|3.11"
+    --name $FUNCTIONAPP_NAME `
+    --query "siteConfig.linuxFxVersion" -o tsv
 ```
 
 ### 2. Federated Identity (OIDC) 認証の設定
@@ -227,18 +224,19 @@ gh secret list
 
 ### 3. ワークフローファイルの確認
 
-`.github/workflows/deploy.yml` の内容を確認します。
+`.github/workflows/deploy-functions.yml` の内容を確認します。
 
 主要な設定:
 
 ```yaml
 env:
   RESOURCE_GROUP: 'rg-internal-rag-dev'
-  WEBAPP_NAME: 'app-internal-rag-dev'  # ←あなたのApp Service名に変更
+  FUNCTIONAPP_NAME: 'func-internal-rag-dev'  # ←あなたのFunctions App名に変更
   CONTAINER_GROUP_NAME: 'aci-runner-${{ github.run_id }}'
   VNET_NAME: 'vnet-internal-rag-dev'
   SUBNET_NAME: 'snet-container-instances'
   LOCATION: 'japaneast'
+  PYTHON_VERSION: '3.11'
 ```
 
 **重要**: このワークフローは、Azure Container Registry (ACR)に格納されたカスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)を使用します。このイメージには、GitHub Runnerと必要なツールがプリインストールされており、起動が高速で安定しています。
@@ -258,12 +256,12 @@ env:
 
 ```powershell
 # 仮想環境を有効化
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 
-# ローカルで起動テスト
-python src/app.py
+# Azure Functions ローカルランタイムで起動
+func start
 
-# ブラウザで http://localhost:8000 にアクセスして動作確認
+# ブラウザで http://localhost:7071 にアクセスして動作確認
 ```
 
 #### GitHubにプッシュ
@@ -289,7 +287,7 @@ GitHubリポジトリページから手動でワークフローを実行する�
 
 1. GitHubリポジトリページを開く
 2. `Actions` タブをクリック
-3. `Deploy to Azure Web Apps` ワークフローを選択
+3. `Deploy to Azure Functions` ワークフローを選択
 4. `Run workflow` をクリック
 5. `Run workflow` ボタンをクリック
 
@@ -303,23 +301,19 @@ GitHubリポジトリページから手動でワークフローを実行する�
    - `build-and-deploy`: アプリケーションのビルドとデプロイ
    - `cleanup`: Runnerのクリーンアップ
 
-#### App Serviceログ
+#### Azure Functionsログ
 
 ```powershell
 # リアルタイムログストリーミング
-az webapp log tail `
+az functionapp log tail `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME
+    --name $FUNCTIONAPP_NAME
 
-# ログファイルをダウンロード
-az webapp log download `
-    --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
-    --log-file app-logs.zip
-
-# ZIPファイルを解凍して確認
-Expand-Archive -Path app-logs.zip -DestinationPath logs/
-Get-Content logs/LogFiles/kudu/trace/*.txt
+# Application Insightsでログ確認
+az monitor app-insights query `
+    --app $FUNCTIONAPP_NAME `
+    --analytics-query "traces | where timestamp > ago(1h) | order by timestamp desc" `
+    --offset 1h
 ```
 
 ### 7. デプロイの確認
@@ -327,10 +321,10 @@ Get-Content logs/LogFiles/kudu/trace/*.txt
 #### アプリケーションへのアクセス
 
 ```powershell
-# App ServiceのURLを取得
-$appUrl = az webapp show `
+# Azure FunctionsのURLを取得
+$appUrl = az functionapp show `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $FUNCTIONAPP_NAME `
     --query defaultHostName -o tsv
 
 Write-Host "Application URL: https://$appUrl"
@@ -374,7 +368,7 @@ if ($response.status -eq "healthy") {
 **Job 2: build-and-deploy**
 - Self-hosted Runner上で実行
 - Private Endpoint経由でKey Vaultにアクセス
-- App Serviceにデプロイ
+- Azure Functionsにデプロイ
 
 **Job 3: cleanup**
 - Runnerを削除
@@ -399,10 +393,10 @@ if ($response.status -eq "healthy") {
 
 ```powershell
 # コードを編集
-code src/app.py
+code function_app.py
 
 # 変更をコミット
-git add src/app.py
+git add function_app.py
 git commit -m "Update: チャット機能の改善"
 
 # プッシュして自動デプロイ
@@ -412,17 +406,17 @@ git push origin main
 ### 環境変数の更新
 
 ```powershell
-# App Service環境変数を更新
-az webapp config appsettings set `
+# Azure Functions環境変数を更新
+az functionapp config appsettings set `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $FUNCTIONAPP_NAME `
     --settings `
         AZURE_OPENAI_DEPLOYMENT=gpt-4-turbo
 
-# アプリを再起動
-az webapp restart `
+# 関数アプリを再起動
+az functionapp restart `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME
+    --name $FUNCTIONAPP_NAME
 ```
 
 ## 確認事項
@@ -431,11 +425,12 @@ az webapp restart `
 
 - ✅ Federated Identity (OIDC)が正しく設定されている
 - ✅ GitHub Secrets (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)が設定されている
-- ✅ App Service環境変数が設定されている
-- ✅ ワークフローファイルが正しく構成されている
+- ✅ Azure Functions環境変数が設定されている
+- ✅ ワークフローファイル(deploy-functions.yml)が正しく構成されている
+- ✅ function_app.py、host.json、static/index.htmlが存在する
 - ✅ コードがGitHubにプッシュされている
 - ✅ GitHub Actionsが正常に実行されている
-- ✅ アプリケーションがデプロイされている
+- ✅ Azure Functionsにデプロイされている
 - ✅ アプリケーションが正常に動作している
 - ✅ RAG機能が動作している
 
@@ -473,18 +468,23 @@ az container list --resource-group $RESOURCE_GROUP --output table
 **症状**: デプロイは成功するがアプリにアクセスできない
 
 **確認事項**:
-1. App Serviceのログを確認
+1. Azure Functionsのログを確認
 2. 環境変数が正しく設定されているか
-3. Pythonバージョンが正しいか
-4. スタートアップコマンドが正しいか
+3. host.jsonの設定が正しいか
+4. function_app.pyにエラーがないか
 
 **対処法**:
 ```powershell
 # ログを確認
-az webapp log tail --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME
+az functionapp log tail --resource-group $RESOURCE_GROUP --name $FUNCTIONAPP_NAME
 
-# SSH接続して直接確認
-az webapp ssh --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME
+# 関数の一覧を確認
+az functionapp function list --resource-group $RESOURCE_GROUP --name $FUNCTIONAPP_NAME
+
+# Application Insightsで詳細確認
+az monitor app-insights query `
+    --app $FUNCTIONAPP_NAME `
+    --analytics-query "exceptions | where timestamp > ago(1h)"
 ```
 
 ### RAGが動作しない

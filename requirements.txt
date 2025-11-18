@@ -1,12 +1,12 @@
 # Azure Functions
 azure-functions==1.20.0
 
-# Azure SDK
+# Azure SDK (非同期対応版を含む)
 azure-identity==1.15.0
 azure-search-documents==11.4.0
 azure-core==1.29.6
 
-# OpenAI
+# OpenAI (非同期対応版)
 openai==1.12.0
 
 # Data processing
@@ -14,3 +14,6 @@ pandas==2.2.0
 
 # Development tools
 python-dotenv==1.0.0
+
+# 非同期処理サポート（Python標準ライブラリに含まれるが明示的に記載）
+# asyncio, aiohttp は必要に応じて追加

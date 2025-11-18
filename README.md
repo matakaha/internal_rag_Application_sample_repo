@@ -14,7 +14,7 @@
 ### 特徴
 
 - ✅ **閉域ネットワーク対応**: Private Endpointを使用した完全閉域構成
-- ✅ **Pythonベース**: Azure Functions (Python v2) + Azure OpenAI + Azure AI Searchによるサーバーレス実装
+- ✅ **モダンスタック**: Node.js (Express) フロントエンド + Azure Functions (Python v2) バックエンド
 - ✅ **Flex Consumption**: コスト効率的なFlexible Consumptionプラン対応
 - ✅ **CI/CD統合**: GitHub Actionsによる自動デプロイ
 - ✅ **教育向け**: ステップバイステップで理解できる構成
@@ -31,20 +31,23 @@
 │  │   (Private EP)   │     │  (Private EP)    │            │
 │  └────────┬─────────┘     └────────┬─────────┘            │
 │           │                        │                       │
-│           └────────┬───────────────┘                       │
-│                    │                                       │
-│         ┌──────────▼─────────────┐                        │
-│         │  Azure Functions       │                        │
-│         │  (Flex Consumption)    │                        │
-│         │  (vNet統合)            │                        │
-│         │                        │                        │
-│         │  ┌──────────────────┐  │                        │
-│         │  │ HTTP Trigger     │  │                        │
-│         │  │ - GET  /         │  │                        │
-│         │  │ - POST /api/chat │  │                        │
-│         │  │ - GET  /health   │  │                        │
-│         │  └──────────────────┘  │                        │
-│         └────────────────────────┘                        │
+│           │         ┌──────────────▼─────────────┐        │
+│           │         │  Azure Functions           │        │
+│           │         │  (Flex Consumption)        │        │
+│           │         │  (vNet統合) [バックエンド] │        │
+│           │         │  - POST /api/chat          │        │
+│           │         │  - GET  /health            │        │
+│           │         └────────────────────────────┘        │
+│           │                        ▲                       │
+│           │                        │                       │
+│  ┌────────▼────────────────────────┘                      │
+│  │  Azure App Service             │                       │
+│  │  (Node.js/Express)             │                       │
+│  │  (vNet統合) [フロントエンド]   │                       │
+│  │  - GET  /                      │                       │
+│  │  - POST /api/chat (プロキシ)   │                       │
+│  │  - GET  /health                │                       │
+│  └────────────────────────────────┘                       │
 └─────────────────────────────────────────────────────────────┘
                        │
                        │ GitHub Actions
@@ -58,6 +61,7 @@
 
 ### アーキテクチャの利点
 
+- **フロントエンド/バックエンド分離**: Node.js (UI) + Python (RAGロジック)の適材適所
 - **サーバーレス**: 使用量に応じた自動スケーリング、アイドル時のコスト削減
 - **Flex Consumption**: 従量課金でコスト効率的、高速コールドスタート
 - **完全閉域**: Private Endpointによるセキュアな通信
@@ -69,19 +73,21 @@
 internal_rag_Application_sample_repo/
 ├── .github/
 │   └── workflows/
-│       ├── deploy.yml              # GitHub Actionsワークフロー(App Service用・旧)
-│       └── deploy-functions.yml    # Azure Functions向けワークフロー
+│       ├── deploy.yml              # App Service用ワークフロー(フロントエンド)
+│       └── deploy-functions.yml    # Azure Functions向けワークフロー(バックエンド)
 ├── scripts/
 │   ├── setup-runner.ps1            # Self-hosted Runner起動スクリプト
 │   ├── cleanup-runner.ps1          # Runnerクリーンアップスクリプト
 │   ├── create-index.ps1            # AI Searchインデックス作成
 │   ├── create-datasource.ps1       # データソース作成
 │   └── create-indexer.ps1          # インデクサー作成
-├── src/                            # 旧アーキテクチャ(App Service)
-│   ├── app.py                      # Flaskアプリケーション
-│   └── templates/
+├── src/                            # フロントエンド(App Service)
+│   ├── app.js                      # Express.js アプリケーション
+│   ├── package.json                # Node.js 依存関係
+│   ├── web.config                  # IIS設定(Azure App Service用)
+│   └── public/
 │       └── index.html              # チャットUI
-├── static/                         # Functions用静的ファイル
+├── static/                         # Functions用静的ファイル(使用しない)
 │   └── index.html                  # チャットUI(Functions向け)
 ├── docs/
 │   ├── step01-setup-environment.md # Step 1: 環境準備
@@ -89,16 +95,20 @@ internal_rag_Application_sample_repo/
 │   ├── step03-indexing.md          # Step 3: AI Searchインデックス作成
 │   ├── step04-deploy-app.md        # Step 4: アプリケーションデプロイ
 │   └── step05-testing.md           # Step 5: テストと運用
-├── function_app.py                 # Azure Functions アプリケーション(v2)
+├── function_app.py                 # Azure Functions アプリケーション(v2/バックエンド)
 ├── host.json                       # Functions ホスト設定
 ├── local.settings.json             # ローカル開発設定
 ├── .funcignore                     # デプロイ除外ファイル
-├── .env.sample                     # 環境変数サンプル
 ├── .gitignore
 ├── requirements.txt                # Python依存関係
 ├── LICENSE
 └── README.md                       # このファイル
 ```
+
+> 📝 **Note**: このプロジェクトはフロントエンドとバックエンドを分離した構成です。
+> - **フロントエンド**: `src/` ディレクトリのNode.js (Express)アプリをAzure Web Apps (App Service)にデプロイ
+> - **バックエンド**: ルートの`function_app.py`をAzure Functions (Flex Consumption)にデプロイ
+> - ルートにFunctionsコードがあるのは、Azure Functionsの標準プロジェクト構造に従っています。
 
 ## 🚀 クイックスタート
 
@@ -123,7 +133,8 @@ internal_rag_Application_sample_repo/
 
 - Azure CLI (`az --version`)
 - Azure Functions Core Tools v4 (`func --version`)
-- Python 3.11以上
+- Node.js 18以上 (フロントエンド用)
+- Python 3.11以上 (バックエンド用)
 - Git
 - GitHub アカウント
 
@@ -167,6 +178,8 @@ internal_rag_Application_sample_repo/
 
 ### 環境構築
 
+#### バックエンド (Azure Functions)
+
 ```powershell
 # リポジトリのクローン
 git clone https://github.com/matakaha/internal_rag_Application_sample_repo.git
@@ -183,18 +196,36 @@ pip install -r requirements.txt
 # https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-run-local
 
 # local.settings.jsonを編集してAzureリソース情報を設定
-# または.envファイルを使用
-cp .env.sample .env
+```
+
+#### フロントエンド (Node.js/Express)
+
+```powershell
+# フロントエンドディレクトリに移動
+cd src
+
+# 依存関係のインストール
+npm install
+
+# 環境変数を設定(.envファイルまたは直接設定)
+# AZURE_OPENAI_ENDPOINT, AZURE_SEARCH_ENDPOINT など
 ```
 
 ### ローカル実行
 
-```powershell
-# Azure Functionsローカルランタイムで起動
-func start
+#### バックエンド起動
 
-# または
-python -m azure.functions.worker
+```powershell
+# ルートディレクトリで
+func start
+```
+
+#### フロントエンド起動
+
+```powershell
+# srcディレクトリで
+cd src
+npm start
 ```
 
 ブラウザで `http://localhost:7071` にアクセス
@@ -222,7 +253,7 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 
 ### 認証・認可
 
-- **Managed Identity**: App ServiceからAzure OpenAI/AI Searchへのアクセス
+- **Managed Identity**: App Service/FunctionsからAzure OpenAI/AI Searchへのアクセス
 - **Private Endpoint**: すべてのAzureリソースは閉域網内
 - **Key Vault**: シークレット管理
 
@@ -236,6 +267,7 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 
 ### フロントエンド
 - HTML/CSS/JavaScript (Vanilla)
+- Node.js/Express - App ServiceでUI配信
 
 ### バックエンド
 - Python 3.11
@@ -260,18 +292,23 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 月額概算コスト: ¥8,000〜18,000
 
 | サービス | 構成 | 月額概算 |
-|---------|------|---------|
-| Azure Functions | Flex Consumption | ¥1,000〜3,000 |
-| Azure OpenAI | GPT-4 従量課金 | ¥3,000〜10,000 |
-| AI Search | Basic | ¥7,000 |
-| Storage Account | Standard | ¥500 |
-| Application Insights | 従量課金 | ¥500 |
-| その他(vNet, DNS等) | - | ¥500 |
+|---------|------|---------||
+| Azure Functions (バックエンド) | Flex Consumption | ￥1,000〜3,000 |
+| App Service (フロントエンド) | Basic B1 | ￥5,000 |
+| Azure OpenAI | GPT-4 従量課金 | ￥3,000〜10,000 |
+| AI Search | Basic | ￥7,000 |
+| Storage Account | Standard | ￥500 |
+| Application Insights | 従量課金 | ￥500 |
+| その他(vNet, DNS等) | - | ￥500 |
 
-> 💡 **Flex Consumptionの利点**: 
+> 💡 **Flex Consumptionの利点 (バックエンドAPI)**: 
 > - アイドル時はほぼコストゼロ
 > - 実行時間とメモリ使用量に応じた従量課金
-> - App Service (Basic B1: ¥5,000/月)と比較して最大60%のコスト削減
+> - 高速コールドスタートと自動スケーリング
+
+> 💡 **フロント/バック分離の利点**: 
+> - UIとAPIを独立してスケーリング可能
+> - バックエンドはFunctionsで従量課金、フロントエンドはApp Serviceで安定配信
 
 > 💡 **ヒント**: 学習終了後はリソースグループを削除してコストを節約しましょう!
 
@@ -290,10 +327,10 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 
 #### 2. アプリが起動しない
 
-**症状**: App Serviceにアクセスできない
+**症状**: アプリケーションにアクセスできない
 
 **確認事項**:
-- App Serviceのログを確認
+- App Service(フロントエンド)またはFunctions(バックエンド)のログを確認
 - 環境変数が正しく設定されているか
 - Managed Identityの権限が付与されているか
 
@@ -330,7 +367,8 @@ MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
 - [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step) - CI/CD構築
 
 ### Azure ドキュメント
-- [Azure App Service](https://learn.microsoft.com/ja-jp/azure/app-service/)
+- [Azure Functions](https://learn.microsoft.com/ja-jp/azure/azure-functions/)
+- [Azure Functions Flex Consumption](https://learn.microsoft.com/ja-jp/azure/azure-functions/flex-consumption-plan)
 - [Azure OpenAI Service](https://learn.microsoft.com/ja-jp/azure/ai-services/openai/)
 - [Azure AI Search](https://learn.microsoft.com/ja-jp/azure/search/)
 - [GitHub Actions for Azure](https://learn.microsoft.com/ja-jp/azure/developer/github/github-actions)

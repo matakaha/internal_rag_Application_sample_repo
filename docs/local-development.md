@@ -248,8 +248,8 @@ az account show
 # static/index.html が存在するか確認
 ls static/index.html
 
-# 存在しない場合はコピー
-Copy-Item src/templates/index.html static/index.html
+# 存在しない場合は、Functionsの静的ファイルとして使用可能
+# (フロントエンドはNode.js/Expressで別途起動)
 ```
 
 ### ポート競合エラー

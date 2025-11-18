@@ -90,7 +90,7 @@ if ($storage) {
     $envVars.AZURE_STORAGE_CONTAINER = "redlist-data"
 }
 
-# Get App Service
+# Get App Service (if exists)
 Write-Host "4. Getting App Service..." -ForegroundColor Yellow
 $webappJson = az webapp list --resource-group $ResourceGroup -o json
 $webappList = $webappJson | ConvertFrom-Json
@@ -100,6 +100,18 @@ if ($webapp) {
     Write-Host "   Name: $($webapp.name)" -ForegroundColor Green
     $envVars.AZURE_WEBAPP_NAME = $webapp.name
     $envVars.AZURE_WEBAPP_URL = "https://$($webapp.defaultHostName)"
+}
+
+# Get Functions App
+Write-Host "4b. Getting Azure Functions..." -ForegroundColor Yellow
+$funcappJson = az functionapp list --resource-group $ResourceGroup -o json
+$funcappList = $funcappJson | ConvertFrom-Json
+$funcapp = $funcappList | Select-Object -First 1
+
+if ($funcapp) {
+    Write-Host "   Name: $($funcapp.name)" -ForegroundColor Green
+    $envVars.AZURE_FUNCTIONAPP_NAME = $funcapp.name
+    $envVars.AZURE_FUNCTIONAPP_URL = "https://$($funcapp.defaultHostName)"
 }
 
 # Get Key Vault
@@ -153,9 +165,13 @@ AZURE_SEARCH_INDEX=$($envVars.AZURE_SEARCH_INDEX)
 AZURE_STORAGE_ACCOUNT_NAME=$($envVars.AZURE_STORAGE_ACCOUNT_NAME)
 AZURE_STORAGE_CONTAINER=$($envVars.AZURE_STORAGE_CONTAINER)
 
-# App Service Settings
+# App Service Settings (Legacy)
 AZURE_WEBAPP_NAME=$($envVars.AZURE_WEBAPP_NAME)
 AZURE_WEBAPP_URL=$($envVars.AZURE_WEBAPP_URL)
+
+# Azure Functions Settings
+AZURE_FUNCTIONAPP_NAME=$($envVars.AZURE_FUNCTIONAPP_NAME)
+AZURE_FUNCTIONAPP_URL=$($envVars.AZURE_FUNCTIONAPP_URL)
 
 # Key Vault Settings
 AZURE_KEYVAULT_NAME=$($envVars.AZURE_KEYVAULT_NAME)
@@ -165,7 +181,6 @@ AZURE_KEYVAULT_URI=$($envVars.AZURE_KEYVAULT_URI)
 AZURE_VNET_NAME=$($envVars.AZURE_VNET_NAME)
 
 # Application Settings
-FLASK_ENV=development
 RESOURCE_GROUP=$ResourceGroup
 "@
 

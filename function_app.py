@@ -1,14 +1,15 @@
 """
 Azure Functions Flex Consumption向け閉域RAGチャットアプリケーション
-Python v2プログラミングモデルを使用
+Python v2プログラミングモデルを使用（非同期対応版）
 """
 import azure.functions as func
 import logging
 import os
 import json
-from openai import AzureOpenAI
-from azure.identity import DefaultAzureCredential
-from azure.search.documents import SearchClient
+import asyncio
+from openai import AsyncAzureOpenAI
+from azure.identity.aio import DefaultAzureCredential
+from azure.search.documents.aio import SearchClient
 from azure.core.credentials import AzureKeyCredential
 
 # Azure Functions アプリケーション初期化
@@ -21,28 +22,40 @@ AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "redlist-index")
 AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
 
-# Azure OpenAI クライアント初期化（グローバルスコープで再利用）
+# Azure認証情報とクライアント（グローバルスコープで再利用）
 credential = DefaultAzureCredential()
 openai_client = None
 search_client = None
 
 
-def get_openai_client():
-    """OpenAIクライアントをシングルトンで取得"""
+async def get_openai_client():
+    """
+    OpenAIクライアントをシングルトンで取得（非同期版）
+    初回呼び出し時のみクライアントを作成し、以降は再利用
+    """
     global openai_client
     if openai_client is None:
-        openai_client = AzureOpenAI(
+        # Azure AD認証トークンを取得する関数
+        async def get_azure_ad_token():
+            token = await credential.get_token("https://cognitiveservices.azure.com/.default")
+            return token.token
+        
+        openai_client = AsyncAzureOpenAI(
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            azure_ad_token_provider=lambda: credential.get_token("https://cognitiveservices.azure.com/.default").token,
+            azure_ad_token_provider=get_azure_ad_token,
             api_version="2024-02-01"
         )
     return openai_client
 
 
-def get_search_client():
-    """AI Searchクライアントをシングルトンで取得"""
+async def get_search_client():
+    """
+    AI Searchクライアントをシングルトンで取得（非同期版）
+    初回呼び出し時のみクライアントを作成し、以降は再利用
+    """
     global search_client
     if search_client is None:
+        # Key認証またはManaged Identity認証を選択
         search_credential = AzureKeyCredential(AZURE_SEARCH_KEY) if AZURE_SEARCH_KEY else credential
         search_client = SearchClient(
             endpoint=AZURE_SEARCH_ENDPOINT,
@@ -52,9 +65,9 @@ def get_search_client():
     return search_client
 
 
-def search_documents(query: str, top_k: int = 3) -> list:
+async def search_documents(query: str, top_k: int = 3) -> list:
     """
-    Azure AI Searchでドキュメントを検索
+    Azure AI Searchでドキュメントを検索（非同期版）
     
     Args:
         query: 検索クエリ
@@ -64,15 +77,19 @@ def search_documents(query: str, top_k: int = 3) -> list:
         検索結果のリスト
     """
     try:
-        client = get_search_client()
+        # 検索クライアントを取得
+        client = await get_search_client()
+        
+        # 検索を実行（非同期）
         results = client.search(
             search_text=query,
             top=top_k,
             select=["content", "title", "url"]
         )
         
+        # 検索結果を収集
         documents = []
-        for result in results:
+        async for result in results:
             documents.append({
                 "content": result.get("content", ""),
                 "title": result.get("title", ""),
@@ -80,15 +97,17 @@ def search_documents(query: str, top_k: int = 3) -> list:
                 "score": result.get("@search.score", 0)
             })
         
+        logging.info(f"Found {len(documents)} documents for query: {query[:50]}...")
         return documents
+        
     except Exception as e:
         logging.error(f"Search error: {e}")
         return []
 
 
-def generate_response(user_message: str, context_documents: list) -> str:
+async def generate_response(user_message: str, context_documents: list) -> str:
     """
-    RAGを使用してレスポンスを生成
+    RAGを使用してレスポンスを生成（非同期版）
     
     Args:
         user_message: ユーザーのメッセージ
@@ -117,8 +136,11 @@ def generate_response(user_message: str, context_documents: list) -> str:
 上記のコンテキストを参考に、質問に答えてください。"""
     
     try:
-        client = get_openai_client()
-        response = client.chat.completions.create(
+        # OpenAIクライアントを取得
+        client = await get_openai_client()
+        
+        # チャット補完を生成（非同期）
+        response = await client.chat.completions.create(
             model=AZURE_OPENAI_DEPLOYMENT,
             messages=[
                 {"role": "system", "content": system_message},
@@ -129,6 +151,7 @@ def generate_response(user_message: str, context_documents: list) -> str:
         )
         
         return response.choices[0].message.content
+        
     except Exception as e:
         logging.error(f"OpenAI error: {e}")
         return f"申し訳ございません。エラーが発生しました: {str(e)}"
@@ -161,9 +184,16 @@ def index(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="api/chat", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-def chat(req: func.HttpRequest) -> func.HttpResponse:
+async def chat(req: func.HttpRequest) -> func.HttpResponse:
     """
-    チャットAPIエンドポイント
+    チャットAPIエンドポイント（非同期版）
+    
+    ユーザーのメッセージを受け取り、RAG（検索拡張生成）を使用して回答を生成します。
+    処理フロー:
+    1. ユーザーメッセージの検証
+    2. AI Searchでドキュメント検索（非同期）
+    3. OpenAIでレスポンス生成（非同期）
+    4. 結果を返却
     """
     logging.info('Chat API invoked')
     
@@ -172,6 +202,7 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         req_body = req.get_json()
         user_message = req_body.get('message', '')
         
+        # メッセージの検証
         if not user_message:
             return func.HttpResponse(
                 json.dumps({'error': 'メッセージが空です'}, ensure_ascii=False),
@@ -179,12 +210,15 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400
             )
         
-        # ドキュメント検索
-        documents = search_documents(user_message)
+        logging.info(f"Processing message: {user_message[:50]}...")
         
-        # レスポンス生成
-        response = generate_response(user_message, documents)
+        # ステップ1: ドキュメント検索（非同期）
+        documents = await search_documents(user_message)
         
+        # ステップ2: レスポンス生成（非同期）
+        response = await generate_response(user_message, documents)
+        
+        # 結果を構築
         result = {
             'response': response,
             'sources': [
@@ -192,6 +226,8 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
                 for doc in documents
             ]
         }
+        
+        logging.info('Chat response generated successfully')
         
         return func.HttpResponse(
             json.dumps(result, ensure_ascii=False),

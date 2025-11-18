@@ -616,4 +616,4 @@ $status.lastResult.errors | Format-List
 
 AI Searchインデックス作成が完了したら、次は **[Step 4: アプリケーションデプロイ](step04-deploy-app.md)** に進みましょう。
 
-GitHubを使用してアプリケーションをAzure App Serviceにデプロイします。
+GitHubを使用してアプリケーションをAzure Functionsにデプロイします。

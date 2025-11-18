@@ -24,7 +24,7 @@
 - Azure OpenAI Service (Private Endpoint付き)
 - Azure AI Search (Private Endpoint付き)
 - Azure Storage Account
-- App Service (vNet統合済み)
+- Azure Functions (Flex Consumption, vNet統合済み)
 
 ✅ **[internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)** が完了していること
 
@@ -43,6 +43,12 @@ az --version
 # Pythonバージョン確認
 python --version
 # 必要: 3.11以上
+
+# Azure Functions Core Toolsバージョン確認
+func --version
+# 必要: 4.x以上
+# 未インストールの場合:
+# winget install Microsoft.Azure.FunctionsCoreTools
 
 # Gitバージョン確認
 git --version
@@ -147,12 +153,12 @@ $SEARCH_ENDPOINT = "https://$SEARCH_NAME.search.windows.net"
 Write-Host "AI Search Name: $SEARCH_NAME"
 Write-Host "AI Search Endpoint: $SEARCH_ENDPOINT"
 
-# App Service 名前取得
-$WEBAPP_NAME = az webapp list `
+# Azure Functions 名前取得
+$FUNCTIONAPP_NAME = az functionapp list `
     --resource-group $RESOURCE_GROUP `
     --query "[0].name" -o tsv
 
-Write-Host "App Service Name: $WEBAPP_NAME"
+Write-Host "Azure Functions Name: $FUNCTIONAPP_NAME"
 
 # Key Vault 名前取得
 $KEYVAULT_NAME = az keyvault list `
@@ -217,9 +223,9 @@ AZURE_SEARCH_INDEX=redlist-index
 AZURE_STORAGE_ACCOUNT_NAME=stinternalragdev
 AZURE_STORAGE_CONTAINER=redlist-data
 
-# App Service 設定
-AZURE_WEBAPP_NAME=app-internal-rag-dev
-AZURE_WEBAPP_URL=https://app-internal-rag-dev.azurewebsites.net
+# Azure Functions 設定
+AZURE_FUNCTIONAPP_NAME=func-internal-rag-dev
+AZURE_FUNCTIONAPP_URL=https://func-internal-rag-dev.azurewebsites.net
 
 # Key Vault 設定
 AZURE_KEYVAULT_NAME=kv-internal-rag-dev
@@ -233,7 +239,6 @@ AI_FOUNDRY_PROJECT_NAME=aip-internal-rag-dev
 AZURE_VNET_NAME=vnet-internal-rag-dev
 
 # アプリケーション設定
-FLASK_ENV=development
 RESOURCE_GROUP=rg-internal-rag-dev
 ```
 
@@ -267,7 +272,7 @@ pip install --upgrade pip
 pip install --only-binary :all: -r requirements.txt
 
 # または、個別にインストール
-# pip install flask gunicorn openai azure-identity azure-search-documents azure-core python-dotenv pandas
+# pip install azure-functions openai azure-identity azure-search-documents azure-core python-dotenv pandas
 
 # インストール確認
 pip list
@@ -320,7 +325,7 @@ az role assignment create `
 Write-Host "✓ Local user permissions granted" -ForegroundColor Green
 ```
 
-> 📝 **Note**: ローカル開発では `az login` で認証した資格情報が使用されます。App Service上では Managed Identity が使用されます。
+> 📝 **Note**: ローカル開発では `az login` で認証した資格情報が使用されます。Azure Functions上では Managed Identity が使用されます。
 
 ### 6. Azure接続テスト
 
@@ -354,10 +359,10 @@ Index: redlist-index
 ```
 
 **Private Endpoint環境の場合**:
-- Azure AI Search: `publicNetworkAccess` が `Disabled` の場合、VPN接続またはApp Service経由でのみアクセス可能
+- Azure AI Search: `publicNetworkAccess` が `Disabled` の場合、VPN接続またはAzure Functions経由でのみアクセス可能
 - この構成はセキュリティ上推奨される設定です
-- App ServiceはvNet統合されているため、デプロイ後は正常に動作します
-- AI Searchの完全な動作確認はStep 3 (インデックス作成後) またはApp Serviceデプロイ後に行います
+- Azure FunctionsはvNet統合されているため、デプロイ後は正常に動作します
+- - AI Searchの完全な動作確認はStep 3 (インデックス作成後) またはAzure Functionsデプロイ後に行います
 
 ### 7. GitHub Secretsの設定
 
@@ -413,9 +418,9 @@ gh secret set AZURE_SEARCH_INDEX -b "redlist-index"
 3. `New repository secret` をクリック
 4. 各Secretを追加
 
-### 8. App Service設定の更新
+### 8. Azure Functions設定の更新
 
-App Serviceに環境変数を設定します。`.env` ファイルから値を読み込んで一括設定できます。
+Azure Functionsに環境変数を設定します。`.env` ファイルから値を読み込んで一括設定できます。
 
 #### 自動設定スクリプト(推奨)
 
@@ -429,10 +434,10 @@ Get-Content .env | ForEach-Object {
     }
 }
 
-# App Serviceに環境変数を設定
-az webapp config appsettings set `
+# Azure Functionsに環境変数を設定
+az functionapp config appsettings set `
     --resource-group $RESOURCE_GROUP `
-    --name $AZURE_WEBAPP_NAME `
+    --name $AZURE_FUNCTIONAPP_NAME `
     --settings `
         AZURE_OPENAI_ENDPOINT="$AZURE_OPENAI_ENDPOINT" `
         AZURE_OPENAI_DEPLOYMENT="$AZURE_OPENAI_DEPLOYMENT" `
@@ -442,19 +447,19 @@ az webapp config appsettings set `
         AZURE_STORAGE_CONTAINER="$AZURE_STORAGE_CONTAINER"
 
 # 設定確認
-az webapp config appsettings list `
+az functionapp config appsettings list `
     --resource-group $RESOURCE_GROUP `
-    --name $AZURE_WEBAPP_NAME `
+    --name $AZURE_FUNCTIONAPP_NAME `
     --output table
 ```
 
 #### 手動で設定する場合
 
 ```powershell
-# App Serviceに環境変数を設定
-az webapp config appsettings set `
+# Azure Functionsに環境変数を設定
+az functionapp config appsettings set `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $AZURE_FUNCTIONAPP_NAME `
     --settings `
         AZURE_OPENAI_ENDPOINT="$OPENAI_ENDPOINT" `
         AZURE_OPENAI_DEPLOYMENT="gpt-4" `
@@ -462,17 +467,17 @@ az webapp config appsettings set `
         AZURE_SEARCH_INDEX="redlist-index"
 
 # 設定確認
-az webapp config appsettings list `
+az functionapp config appsettings list `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $AZURE_FUNCTIONAPP_NAME `
     --output table
 ```
 
-### 9. App Service Managed Identityの権限設定
+### 9. Azure Functions Managed Identityの権限設定
 
-App ServiceのManaged IdentityにAzureリソースへのアクセス権限を付与します。
+Azure FunctionsのManaged IdentityにAzureリソースへのアクセス権限を付与します。
 
-> 📝 **Note**: この手順はStep 5で設定したローカル開発用の権限とは別に、App Service (本番環境) で実行されるアプリケーションがAzureリソースにアクセスするための権限です。
+> 📝 **Note**: この手順はStep 5で設定したローカル開発用の権限とは別に、Azure Functions (本番環境) で実行されるアプリケーションがAzureリソースにアクセスするための権限です。
 
 ```powershell
 # .envファイルから環境変数を読み込む(まだの場合)
@@ -484,13 +489,13 @@ Get-Content .env | ForEach-Object {
     }
 }
 
-# App ServiceのManaged Identity(プリンシパルID)を取得
-$PRINCIPAL_ID = az webapp identity show `
+# Azure FunctionsのManaged Identity(プリンシパルID)を取得
+$PRINCIPAL_ID = az functionapp identity show `
     --resource-group $RESOURCE_GROUP `
-    --name $AZURE_WEBAPP_NAME `
+    --name $AZURE_FUNCTIONAPP_NAME `
     --query principalId -o tsv
 
-Write-Host "App Service Managed Identity: $PRINCIPAL_ID" -ForegroundColor Green
+Write-Host "Azure Functions Managed Identity: $PRINCIPAL_ID" -ForegroundColor Green
 
 # Azure OpenAIへのアクセス権限を付与
 $OPENAI_RESOURCE_ID = az cognitiveservices account show `
@@ -562,7 +567,7 @@ az role assignment create `
 Write-Host "✓ AI Search → Storage Account アクセス権限を付与しました" -ForegroundColor Green
 
 # 権限の確認
-Write-Host "`nApp Service ロール割り当て:" -ForegroundColor Cyan
+Write-Host "`nAzure Functions ロール割り当て:" -ForegroundColor Cyan
 az role assignment list --all --query "[?principalId=='$PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
 
 Write-Host "`nAI Search ロール割り当て:" -ForegroundColor Cyan
@@ -580,7 +585,7 @@ az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{R
 - ✅ `.env` ファイルが作成され、設定されている
 - ✅ Azureリソース情報が収集されている
 - ✅ GitHub Secretsが設定されている
-- ✅ App Serviceの環境変数が設定されている
+- ✅ Azure Functionsの環境変数が設定されている
 - ✅ Managed Identityの権限が付与されている
 
 ## トラブルシューティング

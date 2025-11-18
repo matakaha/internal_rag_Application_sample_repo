@@ -29,23 +29,26 @@ App ServiceからAzure Functions Flex Consumptionへのアーキテクチャ移�
 
 | ファイル | 理由 |
 |---------|------|
-| `src/app.py` | App Service版の参照用 |
-| `.github/workflows/deploy.yml` | App Service版ワークフロー |
+| `.github/workflows/deploy.yml` | App Service版ワークフロー(Node.js/Express用に更新済み) |
+
+**Note**: src/app.py(Flask版)は削除済み。Node.js/Express(src/app.js)に移行完了。
 
 ## 🏗️ アーキテクチャ変更
 
-### 移行前: App Service
+### 移行前: App Service (Flask)
 
 ```
 App Service (Flask + Gunicorn)
 ├── src/app.py (Flaskアプリケーション)
-└── src/templates/index.html
+└── src/public/index.html (現在はNode.js/Express)
 ```
 
 **特徴**:
 - ✅ シンプルな構成
 - ❌ 常時起動でコスト高
 - ❌ スケーリングが手動
+
+**Note**: その後Node.js/Expressに移行済み
 
 ### 移行後: Azure Functions Flex Consumption
 

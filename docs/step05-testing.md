@@ -26,13 +26,13 @@
 #### UI表示確認
 
 ```powershell
-# App ServiceのURLを取得
+# Azure FunctionsのURLを取得
 $RESOURCE_GROUP = "rg-internal-rag-dev"
-$WEBAPP_NAME = "<your-webapp-name>"
+$FUNCTIONAPP_NAME = "<your-functionapp-name>"
 
-$appUrl = az webapp show `
+$appUrl = az functionapp show `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
+    --name $FUNCTIONAPP_NAME `
     --query defaultHostName -o tsv
 
 Write-Host "Application URL: https://$appUrl"
@@ -273,14 +273,20 @@ az monitor app-insights query `
     --output table
 ```
 
-#### App Serviceログ
+#### Azure Functionsログ
 
 ```powershell
-# ログファイルをダウンロード
-az webapp log download `
+# ログストリーミング
+az functionapp log tail `
     --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
-    --log-file app-logs.zip
+    --name $FUNCTIONAPP_NAME
+
+# Application Insightsでログ確認
+az monitor app-insights query `
+    --app $FUNCTIONAPP_NAME `
+    --analytics-query "traces | where timestamp > ago(1h) | order by timestamp desc" `
+    --offset 1h
+```
 
 # 解凍
 Expand-Archive -Path app-logs.zip -DestinationPath logs/ -Force
@@ -302,7 +308,17 @@ Get-ChildItem -Path logs/ -Recurse -Filter *.txt | ForEach-Object {
 #### Azure Monitorアラート設定
 
 ```powershell
-# App Serviceのメトリックスでアラートを作成
+# Azure Functionsのメトリックスでアラートを作成
+
+# 実行時間が長い場合のアラート
+az monitor metrics alert create `
+    --name "long-execution-alert" `
+    --resource-group $RESOURCE_GROUP `
+    --scopes "/subscriptions/<subscription-id>/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Web/sites/$FUNCTIONAPP_NAME" `
+    --condition "avg FunctionExecutionUnits > 1000" `
+    --window-size 5m `
+    --evaluation-frequency 1m `
+    --action ""
 
 # CPU使用率が80%を超えたらアラート
 az monitor metrics alert create `
