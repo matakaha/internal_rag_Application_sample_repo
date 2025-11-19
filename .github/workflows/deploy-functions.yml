@@ -170,31 +170,24 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get Azure Functions Publish Profile
-        id: get-publish-profile
-        run: |
-          PUBLISH_PROFILE=$(az functionapp deployment list-publishing-profiles \
-            --name ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --xml)
-          echo "::add-mask::$PUBLISH_PROFILE"
-          echo "PUBLISH_PROFILE<<EOF" >> $GITHUB_ENV
-          echo "$PUBLISH_PROFILE" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Package Function App
+        run: |
+          # デプロイ用のzipパッケージを作成
+          zip -r function-app.zip . -x "*.git*" -x "*venv/*" -x "*__pycache__/*" -x "*.pyc"
+
       - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: ${{ env.FUNCTION_APP_NAME }}
-          package: '.'
-          publish-profile: ${{ env.PUBLISH_PROFILE }}
-          scm-do-build-during-deployment: true
-          enable-oryx-build: true
+        run: |
+          # Azure CLIでデプロイ（ARM API経由、SCMエンドポイント不要）
+          az functionapp deployment source config-zip \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --src function-app.zip \
+            --build-remote true
 
   cleanup:
     needs: [setup-runner, build-and-deploy]

@@ -1,7 +1,7 @@
 # Microsoft公式のUbuntuイメージを使用
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-# 必要なパッケージをインストール (.NET 6.0依存関係、Python 3.11含む)
+# 必要なパッケージをインストール (.NET 6.0依存関係、Python 3.11、Node.js含む)
 RUN tdnf install -y \
     ca-certificates \
     curl \
@@ -14,6 +14,8 @@ RUN tdnf install -y \
     python3 \
     python3-pip \
     python3-devel \
+    nodejs \
+    npm \
     && tdnf clean all
 
 # Azure CLIをpipでインストール (CBL Mariner 2.0用リポジトリが利用不可のため)
