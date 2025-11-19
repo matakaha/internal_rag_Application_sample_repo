@@ -13,7 +13,6 @@ concurrency:
 env:
   RESOURCE_GROUP: 'rg-internal-rag-dev'
   WEBAPP_NAME: 'app-internal-rag-dev'
-  CONTAINER_GROUP_NAME: 'aci-github-runner-dev'
   VNET_NAME: 'vnet-internal-rag-dev'
   SUBNET_NAME: 'snet-container-instances'
   LOCATION: 'japaneast'
@@ -28,7 +27,8 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      runner-name: ${{ steps.restart-runner.outputs.runner-name }}
+      runner-name: ${{ steps.setup-runner.outputs.runner-name }}
+      container-name: ${{ steps.setup-runner.outputs.container-name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,12 +40,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Restart Container Instance Runner
-        id: restart-runner
+      - name: Setup Container Instance Runner
+        id: setup-runner
         run: |
-          # Runner名を生成
+          # 動的なコンテナ名とRunner名を生成
+          CONTAINER_GROUP_NAME="aci-runner-${{ github.run_id }}"
           RUNNER_NAME="runner-${{ github.run_id }}"
           echo "runner-name=$RUNNER_NAME" >> $GITHUB_OUTPUT
+          echo "container-name=$CONTAINER_GROUP_NAME" >> $GITHUB_OUTPUT
 
           # GitHub Runner登録トークン取得
           RUNNER_TOKEN=$(curl -s -X POST \
@@ -55,35 +57,6 @@ jobs:
             | jq -r .token)
 
           echo "RUNNER_TOKEN取得完了"
-
-          # 既存のContainer Instanceの存在確認
-          echo "Checking for existing container instance..."
-          EXISTING=$(az container list \
-            --resource-group $RESOURCE_GROUP \
-            --query "[?name=='$CONTAINER_GROUP_NAME'].name" -o tsv)
-          
-          if [ -n "$EXISTING" ]; then
-            echo "Existing container found. Stopping and deleting..."
-            
-            # 既存のContainer Instanceを停止
-            az container stop \
-              --resource-group $RESOURCE_GROUP \
-              --name $CONTAINER_GROUP_NAME || true
-            
-            echo "Waiting for container to stop..."
-            sleep 5
-            
-            # Container Instance削除
-            az container delete \
-              --resource-group $RESOURCE_GROUP \
-              --name $CONTAINER_GROUP_NAME \
-              --yes
-            
-            echo "Waiting for deletion to complete..."
-            sleep 5
-          else
-            echo "No existing container found. Will create new one."
-          fi
 
           # ACRのリソースIDを取得
           ACR_ID=$(az acr show --name acrinternalragdev --resource-group $RESOURCE_GROUP --query id -o tsv)
@@ -126,7 +99,7 @@ jobs:
           
           # User Assigned Managed Identityを使ってコンテナ作成
           # Private Endpoint経由でACRにアクセス(vNet内部通信)
-          echo "Creating GitHub Runner container with ACR image..."
+          echo "Creating GitHub Runner container: $CONTAINER_GROUP_NAME"
           az container create \
             --resource-group $RESOURCE_GROUP \
             --name $CONTAINER_GROUP_NAME \
@@ -265,11 +238,39 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/actions/runners/$RUNNER_ID"
           fi
 
-      - name: Stop Container Instance
+      - name: Cleanup Resources
         run: |
-          echo "Stopping container instance (not deleting to avoid charges)..."
-          az container stop \
-            --resource-group $RESOURCE_GROUP \
-            --name $CONTAINER_GROUP_NAME || true
+          CONTAINER_GROUP_NAME="${{ needs.setup-runner.outputs.container-name }}"
           
-          echo "Container instance stopped (will remain in failed/stopped state)"
+          echo "Deleting container instance: $CONTAINER_GROUP_NAME"
+          az container delete \
+            --resource-group $RESOURCE_GROUP \
+            --name $CONTAINER_GROUP_NAME \
+            --yes || true
+          
+          # Managed Identityを削除
+          IDENTITY_NAME="id-aci-runner-${GITHUB_RUN_ID}"
+          echo "Deleting User Assigned Managed Identity: $IDENTITY_NAME"
+          az identity delete \
+            --name $IDENTITY_NAME \
+            --resource-group $RESOURCE_GROUP || true
+          
+          # 7日以上前の古いACIをクリーンアップ
+          echo "Cleaning up old container instances (>7 days)..."
+          CUTOFF_DATE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -v-7d '+%Y-%m-%dT%H:%M:%SZ')
+          
+          OLD_CONTAINERS=$(az container list \
+            --resource-group $RESOURCE_GROUP \
+            --query "[?starts_with(name, 'aci-runner-') && properties.instanceView.state != 'Running'].{name:name, created:properties.instanceView.events[0].lastTimestamp}" \
+            -o json | jq -r ".[] | select(.created < \"$CUTOFF_DATE\") | .name")
+          
+          if [ -n "$OLD_CONTAINERS" ]; then
+            echo "Found old containers to delete:"
+            echo "$OLD_CONTAINERS"
+            for container in $OLD_CONTAINERS; do
+              echo "Deleting $container..."
+              az container delete --resource-group $RESOURCE_GROUP --name $container --yes || true
+            done
+          else
+            echo "No old containers to clean up"
+          fi
