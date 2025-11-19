@@ -169,35 +169,30 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get Publish Profile from Azure
-        id: get-publish-profile
-        run: |
-          # Azure CLIで直接Publish Profileを取得
-          PUBLISH_PROFILE=$(az webapp deployment list-publishing-profiles \
-            --name ${{ env.WEBAPP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --xml)
-          echo "::add-mask::$PUBLISH_PROFILE"
-          echo "PUBLISH_PROFILE<<EOF" >> $GITHUB_ENV
-          echo "$PUBLISH_PROFILE" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
       - name: Install dependencies
         working-directory: ./src
         run: |
           npm install
 
       - name: Build application
+        working-directory: ./src
         run: |
-          # アプリケーションのビルド処理
           echo "Building Node.js application..."
+          # ビルドが必要な場合はここに追加
+          # npm run build
+
+      - name: Package application
+        run: |
+          cd src
+          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
 
       - name: Deploy to Azure Web Apps
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ env.WEBAPP_NAME }}
-          publish-profile: ${{ env.PUBLISH_PROFILE }}
-          package: ./src
+        run: |
+          # Azure CLIでデプロイ（ARM API経由）
+          az webapp deployment source config-zip \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --src webapp.zip
 
   cleanup:
     needs: [setup-runner, build-and-deploy]
