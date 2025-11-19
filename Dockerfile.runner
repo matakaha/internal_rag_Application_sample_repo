@@ -1,7 +1,7 @@
 # Microsoft公式のUbuntuイメージを使用
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-# 必要なパッケージをインストール
+# 必要なパッケージをインストール (.NET 6.0依存関係含む)
 RUN tdnf install -y \
     ca-certificates \
     curl \
@@ -10,6 +10,7 @@ RUN tdnf install -y \
     jq \
     git \
     shadow-utils \
+    icu \
     && tdnf clean all
 
 # GitHub Runner用の非rootユーザーを作成
