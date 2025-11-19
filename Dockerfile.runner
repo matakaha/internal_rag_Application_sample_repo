@@ -13,6 +13,12 @@ RUN tdnf install -y \
     icu \
     && tdnf clean all
 
+# Azure CLIのインストール
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc \
+    && tdnf install -y https://packages.microsoft.com/config/cbl-mariner/2.0/packages-microsoft-prod.rpm \
+    && tdnf install -y azure-cli \
+    && tdnf clean all
+
 # GitHub Runner用の非rootユーザーを作成
 RUN useradd -m -s /bin/bash runner
 
