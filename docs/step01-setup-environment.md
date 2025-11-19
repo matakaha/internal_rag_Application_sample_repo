@@ -630,6 +630,122 @@ az account set --subscription "<subscription-id>"
 - Azure Portal で自分のアカウントが「所有者」または「ユーザーアクセス管理者」ロールを持っているか確認
 - リソースグループレベルで権限を確認
 
+## GitHub Runnerイメージの作成・更新
+
+このプロジェクトでは、GitHub ActionsでセルフホストランナーをAzure Container Instancesで動的に実行します。ランナー用のカスタムDockerイメージをAzure Container Registry (ACR) にビルド・保存する必要があります。
+
+### 対象ファイル
+
+- `Dockerfile.runner`: GitHub Runnerのコンテナイメージ定義
+- `start.sh`: ランナー起動スクリプト(ネットワーク診断・デバッグログ含む)
+
+### ACRビルドが必要なケース
+
+以下の場合、ACRで新しいイメージをビルドする必要があります:
+
+| シナリオ | ACRビルド必要 | 理由 |
+|---------|-------------|------|
+| `Dockerfile.runner`を修正 | ✅ 必要 | イメージの構成変更 |
+| `start.sh`を修正 | ✅ 必要 | 起動スクリプトがイメージに含まれる |
+| ベースイメージの更新 | ✅ 推奨 | セキュリティパッチ適用のため |
+| GitHub Runner バージョンアップ | ✅ 推奨 | 最新機能・修正を反映 |
+| ワークフローファイルのみ修正 | ❌ 不要 | イメージは変更なし |
+| 環境変数のみ変更 | ❌ 不要 | ランタイムで設定される |
+
+### ビルドコマンド
+
+```powershell
+# 基本的なビルド (latestタグのみ)
+az acr build `
+  --registry acrinternalragdev `
+  --resource-group rg-internal-rag-dev `
+  --image github-runner:latest `
+  --file Dockerfile.runner `
+  .
+
+# バージョンタグ付きビルド (推奨)
+az acr build `
+  --registry acrinternalragdev `
+  --resource-group rg-internal-rag-dev `
+  --image github-runner:latest `
+  --image github-runner:v1.2.0 `
+  --file Dockerfile.runner `
+  .
+```
+
+**重要**: カレントディレクトリがリポジトリルート(`internal_rag_Application_sample_repo`)であることを確認してください。
+
+### ビルド状況の確認
+
+```powershell
+# ビルド履歴の確認(最新3件)
+az acr task list-runs `
+  --registry acrinternalragdev `
+  --top 3 `
+  -o table
+
+# 特定のビルドIDのステータス監視
+$buildId = "ce7"  # 実際のビルドIDに置き換え
+while ($true) {
+    $status = az acr task list-runs `
+      --registry acrinternalragdev `
+      --run-id $buildId `
+      --query "[0].status" `
+      -o tsv
+    Write-Host "Status: $status ($(Get-Date -Format 'HH:mm:ss'))"
+    if ($status -eq "Succeeded" -or $status -eq "Failed") { break }
+    Start-Sleep -Seconds 10
+}
+
+# イメージタグの確認
+az acr repository show-tags `
+  --name acrinternalragdev `
+  --repository github-runner `
+  --orderby time_desc `
+  --top 5 `
+  -o table
+```
+
+### トラブルシューティング
+
+#### ビルドが失敗する
+
+**症状**: `az acr build` コマンドがエラーで終了
+
+**対処法**:
+```powershell
+# ビルドログの確認
+az acr task logs --registry acrinternalragdev --run-id <build-id>
+
+# よくあるエラー:
+# - "unknown instruction: SET" → Dockerfileの構文エラー(heredoc非対応)
+# - "Can't detect current OS type" → installdependencies.sh実行エラー(CBL Mariner非対応)
+# - "permission denied" → COPY/CHOWNの権限問題
+```
+
+#### イメージがプルできない
+
+**症状**: Container Instancesでイメージプルに失敗
+
+**対処法**:
+- ACRでPrivate Endpointが有効化されているか確認
+- Container InstancesでUser Assigned Managed Identityが設定されているか確認(`--acr-identity`パラメータ)
+- NSGでHTTPS(443)のアウトバウンドが許可されているか確認
+
+### ベストプラクティス
+
+1. **バージョンタグの運用**: 
+   - `latest`タグのみではなく、`v1.2.0`などのセマンティックバージョニングを併用
+   - ロールバック時に特定バージョンを指定可能
+
+2. **ビルド前の動作確認**:
+   - ローカルでDockerイメージをビルドして動作確認
+   - `docker build -f Dockerfile.runner -t test-runner .`
+
+3. **定期的な更新**:
+   - ベースイメージ(`mcr.microsoft.com/cbl-mariner/base/core:2.0`)のセキュリティパッチ適用
+   - GitHub Runnerの最新バージョンへの更新(`RUNNER_VERSION`環境変数)
+
 ## 次のステップ
 
 環境準備が完了したら、次は **[Step 2: データ準備](step02-data-preparation.md)** に進みましょう。

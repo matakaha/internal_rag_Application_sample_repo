@@ -9,7 +9,11 @@ RUN tdnf install -y \
     gzip \
     jq \
     git \
+    shadow-utils \
     && tdnf clean all
+
+# GitHub Runner用の非rootユーザーを作成
+RUN useradd -m -s /bin/bash runner
 
 # GitHub Runnerをインストール
 ARG RUNNER_VERSION=2.311.0
@@ -19,30 +23,13 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
     https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
     && tar xzf actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
     && rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
-    && ./bin/installdependencies.sh
+    && chown -R runner:runner /actions-runner
 
-# 起動スクリプトを作成
-COPY <<'EOF' /start.sh
-#!/bin/bash
-set -e
-
-if [ -z "$RUNNER_TOKEN" ] || [ -z "$RUNNER_REPOSITORY_URL" ]; then
-    echo "Error: RUNNER_TOKEN and RUNNER_REPOSITORY_URL must be set"
-    exit 1
-fi
-
-./config.sh \
-    --url "${RUNNER_REPOSITORY_URL}" \
-    --token "${RUNNER_TOKEN}" \
-    --name "${RUNNER_NAME:-runner-$(hostname)}" \
-    --work "${RUNNER_WORK_DIRECTORY:-_work}" \
-    --labels "${RUNNER_LABELS:-self-hosted}" \
-    --unattended \
-    --replace
-
-./run.sh
-EOF
-
+# 起動スクリプトをコピー
+COPY start.sh /start.sh
 RUN chmod +x /start.sh
+
+# 非rootユーザーに切り替え
+USER runner
 
 ENTRYPOINT ["/start.sh"]
