@@ -185,11 +185,13 @@ jobs:
             --memory 4 \
             --restart-policy Never \
             --environment-variables \
+              GITHUB_REPOSITORY=${{ github.repository }} \
+              RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_NAME=$RUNNER_NAME \
               RUNNER_TOKEN=$RUNNER_TOKEN \
-              GITHUB_TOKEN=${{ secrets.GH_PAT }} \
-              RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
-              RUNNER_LABELS=self-hosted,azure,vnet
+              RUNNER_LABELS=self-hosted,azure,vnet \
+              RUNNER_WORK_DIRECTORY=_work \
+              GITHUB_TOKEN=${{ secrets.GH_PAT }}
           
           # ACIが起動するまで少し待機
           sleep 15
