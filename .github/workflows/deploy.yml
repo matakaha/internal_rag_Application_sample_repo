@@ -188,11 +188,13 @@ jobs:
 
       - name: Deploy to Azure Web Apps
         run: |
-          # Azure CLIでデプロイ（ARM API経由）
-          az webapp deployment source config-zip \
+          # Azure CLIでデプロイ（新しい推奨方法）
+          az webapp deploy \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
-            --src webapp.zip
+            --src-path webapp.zip \
+            --type zip \
+            --async false
 
   cleanup:
     needs: [setup-runner, build-and-deploy]
