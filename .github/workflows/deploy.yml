@@ -109,6 +109,10 @@ jobs:
           
           echo "Identity Principal ID: $IDENTITY_PRINCIPAL_ID"
           
+          # Managed IdentityがEntra IDに伝播するまで待機
+          echo "Waiting for Managed Identity to propagate to Entra ID..."
+          sleep 60
+          
           # IdentityにACR Pull権限を付与
           echo "Assigning AcrPull role to User Assigned Identity..."
           az role assignment create \
