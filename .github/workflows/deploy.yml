@@ -186,6 +186,61 @@ jobs:
           cd src
           zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
 
+      - name: Diagnose Network and Authentication
+        run: |
+          echo "=== Network and Authentication Diagnostics ==="
+          
+          # 1. Azure認証確認
+          echo "1. Checking Azure authentication..."
+          az account show
+          
+          # 2. Web Appの情報取得
+          echo "2. Getting Web App information..."
+          az webapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --query "{name:name, state:state, hostNames:hostNames, httpsOnly:httpsOnly}" \
+            -o json
+          
+          # 3. Web AppのネットワークVNet統合確認
+          echo "3. Checking VNet integration..."
+          az webapp vnet-integration list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            -o json || echo "No VNet integration found"
+          
+          # 4. SCMエンドポイントへの接続性確認
+          echo "4. Testing connectivity to SCM endpoint..."
+          SCM_URL="https://${{ env.WEBAPP_NAME }}.scm.azurewebsites.net"
+          echo "SCM URL: $SCM_URL"
+          
+          # curlで接続テスト（認証なし）
+          curl -v -m 10 "$SCM_URL" 2>&1 | grep -E "Connected|SSL|TLS|HTTP|timed out" || echo "Connection test completed"
+          
+          # 5. Web AppのPublic Network Access設定確認
+          echo "5. Checking Public Network Access settings..."
+          az webapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --query "{publicNetworkAccess:publicNetworkAccess, vnetRouteAllEnabled:vnetRouteAllEnabled}" \
+            -o json || echo "Could not retrieve network access settings"
+          
+          # 6. Private Endpoint確認
+          echo "6. Checking Private Endpoints..."
+          az network private-endpoint list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "[?contains(name, 'app-internal-rag')].{name:name, provisioningState:provisioningState, subnet:subnet.id}" \
+            -o json || echo "No private endpoints found"
+          
+          # 7. NSG確認（Runner側のサブネット）
+          echo "7. Checking NSG on runner subnet..."
+          az network vnet subnet show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --vnet-name ${{ env.VNET_NAME }} \
+            --name ${{ env.SUBNET_NAME }} \
+            --query "{name:name, nsg:networkSecurityGroup.id}" \
+            -o json
+
       - name: Deploy to Azure Web Apps
         run: |
           # Azure CLIでデプロイ（新しい推奨方法）
