@@ -187,6 +187,7 @@ jobs:
           zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
 
       - name: Diagnose Network and Authentication
+        id: diagnose
         run: |
           echo "=== Network and Authentication Diagnostics ==="
           
@@ -204,10 +205,11 @@ jobs:
           
           # 3. Web AppのネットワークVNet統合確認
           echo "3. Checking VNet integration..."
-          az webapp vnet-integration list \
+          VNET_INTEGRATION=$(az webapp vnet-integration list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
-            -o json || echo "No VNet integration found"
+            -o json 2>/dev/null || echo "[]")
+          echo "$VNET_INTEGRATION"
           
           # 4. SCMエンドポイントへの接続性確認
           echo "4. Testing connectivity to SCM endpoint..."
@@ -215,22 +217,25 @@ jobs:
           echo "SCM URL: $SCM_URL"
           
           # curlで接続テスト（認証なし）
-          curl -v -m 10 "$SCM_URL" 2>&1 | grep -E "Connected|SSL|TLS|HTTP|timed out" || echo "Connection test completed"
+          SCM_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$SCM_URL" 2>&1 || echo "000")
+          echo "SCM endpoint HTTP status: $SCM_RESPONSE"
           
           # 5. Web AppのPublic Network Access設定確認
           echo "5. Checking Public Network Access settings..."
-          az webapp show \
+          PUBLIC_ACCESS=$(az webapp show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
-            --query "{publicNetworkAccess:publicNetworkAccess, vnetRouteAllEnabled:vnetRouteAllEnabled}" \
-            -o json || echo "Could not retrieve network access settings"
+            --query "publicNetworkAccess" \
+            -o tsv 2>/dev/null || echo "Enabled")
+          echo "Public Network Access: $PUBLIC_ACCESS"
           
           # 6. Private Endpoint確認
           echo "6. Checking Private Endpoints..."
-          az network private-endpoint list \
+          PRIVATE_ENDPOINTS=$(az network private-endpoint list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "[?contains(name, 'app-internal-rag')].{name:name, provisioningState:provisioningState, subnet:subnet.id}" \
-            -o json || echo "No private endpoints found"
+            --query "[?contains(name, 'app-internal-rag')].{name:name, provisioningState:provisioningState}" \
+            -o json 2>/dev/null || echo "[]")
+          echo "$PRIVATE_ENDPOINTS"
           
           # 7. NSG確認（Runner側のサブネット）
           echo "7. Checking NSG on runner subnet..."
@@ -240,16 +245,104 @@ jobs:
             --name ${{ env.SUBNET_NAME }} \
             --query "{name:name, nsg:networkSecurityGroup.id}" \
             -o json
+          
+          # デプロイ方法を判定
+          echo ""
+          echo "=== Determining Deployment Method ==="
+          
+          # SCMエンドポイントにアクセス可能か判定
+          if [ "$SCM_RESPONSE" = "401" ] || [ "$SCM_RESPONSE" = "403" ]; then
+            # 401/403 = 認証エラー → SCMエンドポイントには到達可能
+            echo "✅ SCM endpoint is accessible (authentication required)"
+            echo "deploy_method=scm" >> $GITHUB_OUTPUT
+          elif [ "$SCM_RESPONSE" = "000" ] || [ "$SCM_RESPONSE" = "timeout" ]; then
+            # タイムアウトまたは接続不可 → Private Endpointまたは閉域
+            echo "❌ SCM endpoint is NOT accessible (timeout/connection refused)"
+            echo "deploy_method=arm" >> $GITHUB_OUTPUT
+          else
+            # その他のHTTPレスポンス
+            echo "⚠️  SCM endpoint returned HTTP $SCM_RESPONSE"
+            echo "deploy_method=arm" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Deploy to Azure Web Apps
+      - name: Deploy to Azure Web Apps (SCM method)
+        if: steps.diagnose.outputs.deploy_method == 'scm'
         run: |
-          # Azure CLIでデプロイ（新しい推奨方法）
-          az webapp deploy \
+          echo "=== Deploying via SCM endpoint (Kudu) ==="
+          echo "SCM endpoint is accessible from this runner"
+          
+          # Get Publishing Credentials
+          PUBLISH_CREDS=$(az webapp deployment list-publishing-credentials \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
-            --src-path webapp.zip \
-            --type zip \
-            --async false
+            --query "{username:publishingUserName, password:publishingPassword}" \
+            -o json)
+          
+          USERNAME=$(echo $PUBLISH_CREDS | jq -r .username)
+          PASSWORD=$(echo $PUBLISH_CREDS | jq -r .password)
+          
+          # ZIP Deploy via SCM endpoint
+          curl -X POST \
+            -u "$USERNAME:$PASSWORD" \
+            --data-binary @webapp.zip \
+            "https://${{ env.WEBAPP_NAME }}.scm.azurewebsites.net/api/zipdeploy" \
+            -H "Content-Type: application/zip" \
+            --max-time 600
+          
+          echo "✅ Deployment via SCM completed"
+
+      - name: Deploy to Azure Web Apps (ARM API method)
+        if: steps.diagnose.outputs.deploy_method == 'arm'
+        run: |
+          echo "=== Deploying via Azure Resource Manager API (no SCM endpoint) ==="
+          echo "SCM endpoint is NOT accessible - using ARM API instead"
+          
+          # Web AppのリソースIDを取得
+          WEBAPP_RESOURCE_ID=$(az webapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --query id -o tsv)
+          
+          echo "Web App Resource ID: $WEBAPP_RESOURCE_ID"
+          
+          # アクセストークン取得（Federated Identity使用）
+          ACCESS_TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+          
+          # ZIP Deployエンドポイント（ARM API経由）
+          DEPLOY_URL="https://management.azure.com${WEBAPP_RESOURCE_ID}/extensions/onedeploy?api-version=2022-03-01"
+          
+          echo "Deploy URL: $DEPLOY_URL"
+          echo "Starting deployment via ARM API..."
+          
+          # Base64エンコードしたZIPファイルをJSON bodyとして送信
+          ZIP_BASE64=$(base64 -w 0 webapp.zip)
+          
+          # JSON bodyを作成（echoでパイプ）
+          echo "{\"properties\":{\"type\":\"zip\",\"packageUri\":\"data:application/zip;base64,${ZIP_BASE64}\"}}" > deploy-payload.json
+          
+          # ARM API経由でデプロイ実行
+          DEPLOY_RESPONSE=$(curl -X PUT \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @deploy-payload.json \
+            "${DEPLOY_URL}" \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --max-time 600)
+          
+          HTTP_STATUS=$(echo "$DEPLOY_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response: $DEPLOY_RESPONSE"
+          
+          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ] || [ "$HTTP_STATUS" -eq 202 ]; then
+            echo "✅ Deployment initiated successfully via ARM API"
+          else
+            echo "❌ Deployment failed with HTTP status: $HTTP_STATUS"
+            exit 1
+          fi
+          
+          # クリーンアップ
+          rm -f deploy-payload.json
 
   cleanup:
     needs: [setup-runner, build-and-deploy]

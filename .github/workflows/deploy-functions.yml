@@ -172,13 +172,37 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # PYTHONNOUSERSITE環境変数を一時的に無効化
+          unset PYTHONNOUSERSITE
+          unset PIP_NO_USER
+          
+          # 仮想環境を作成してアクティベート
+          python -m venv venv
+          source venv/bin/activate
+          
+          # pipをアップグレード
           python -m pip install --upgrade pip
+          
+          # 依存パッケージをインストール
           pip install -r requirements.txt
+          
+          echo "✅ Dependencies installed in virtual environment"
 
       - name: Package Function App
         run: |
-          # デプロイ用のzipパッケージを作成
-          zip -r function-app.zip . -x "*.git*" -x "*venv/*" -x "*__pycache__/*" -x "*.pyc"
+          # 仮想環境の依存パッケージをルートディレクトリにコピー
+          # Azure Functionsは.python_packagesディレクトリを自動認識
+          mkdir -p .python_packages/lib/site-packages
+          cp -r venv/lib/python*/site-packages/* .python_packages/lib/site-packages/
+          
+          # デプロイ用のzipパッケージを作成（venvは除外、.python_packagesを含む）
+          zip -r function-app.zip . \
+            -x "*.git*" \
+            -x "*venv/*" \
+            -x "*__pycache__/*" \
+            -x "*.pyc"
+          
+          echo "✅ Function app packaged with dependencies"
 
       - name: Deploy to Azure Functions
         run: |
