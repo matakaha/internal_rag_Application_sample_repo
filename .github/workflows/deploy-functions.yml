@@ -204,14 +204,124 @@ jobs:
           
           echo "✅ Function app packaged with dependencies"
 
-      - name: Deploy to Azure Functions
+      - name: Diagnose Network and Authentication
+        id: diagnose
         run: |
-          # Azure CLIでデプロイ（ARM API経由、SCMエンドポイント不要）
-          az functionapp deployment source config-zip \
+          echo "=== Network and Authentication Diagnostics for Functions ==="
+          
+          # 1. Azure認証確認
+          echo "1. Checking Azure authentication..."
+          az account show
+          
+          # 2. Function Appの情報取得
+          echo "2. Getting Function App information..."
+          az functionapp show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.FUNCTION_APP_NAME }} \
-            --src function-app.zip \
-            --build-remote true
+            --query "{name:name, state:state, hostNames:hostNames}" \
+            -o json
+          
+          # 3. SCMエンドポイントへの接続性確認
+          echo "3. Testing connectivity to SCM endpoint..."
+          SCM_URL="https://${{ env.FUNCTION_APP_NAME }}.scm.azurewebsites.net"
+          echo "SCM URL: $SCM_URL"
+          
+          # curlで接続テスト（認証なし）
+          SCM_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$SCM_URL" 2>&1 || echo "000")
+          echo "SCM endpoint HTTP status: $SCM_RESPONSE"
+          
+          # デプロイ方法を判定
+          echo ""
+          echo "=== Determining Deployment Method ==="
+          
+          if [ "$SCM_RESPONSE" = "401" ] || [ "$SCM_RESPONSE" = "403" ]; then
+            echo "✅ SCM endpoint is accessible (authentication required)"
+            echo "deploy_method=scm" >> $GITHUB_OUTPUT
+          elif [ "$SCM_RESPONSE" = "000" ] || [ "$SCM_RESPONSE" = "timeout" ]; then
+            echo "❌ SCM endpoint is NOT accessible (timeout/connection refused)"
+            echo "deploy_method=arm" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  SCM endpoint returned HTTP $SCM_RESPONSE"
+            echo "deploy_method=arm" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to Azure Functions (SCM method)
+        if: steps.diagnose.outputs.deploy_method == 'scm'
+        run: |
+          echo "=== Deploying via SCM endpoint ==="
+          
+          # Get Publishing Credentials
+          PUBLISH_CREDS=$(az functionapp deployment list-publishing-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --query "{username:publishingUserName, password:publishingPassword}" \
+            -o json)
+          
+          USERNAME=$(echo $PUBLISH_CREDS | jq -r .username)
+          PASSWORD=$(echo $PUBLISH_CREDS | jq -r .password)
+          
+          # ZIP Deploy via SCM endpoint
+          curl -X POST \
+            -u "$USERNAME:$PASSWORD" \
+            --data-binary @function-app.zip \
+            "https://${{ env.FUNCTION_APP_NAME }}.scm.azurewebsites.net/api/zipdeploy" \
+            -H "Content-Type: application/zip" \
+            --max-time 600
+          
+          echo "✅ Deployment via SCM completed"
+
+      - name: Deploy to Azure Functions (ARM API method)
+        if: steps.diagnose.outputs.deploy_method == 'arm'
+        run: |
+          echo "=== Deploying via Azure Resource Manager API ==="
+          echo "SCM endpoint is NOT accessible - using ARM API instead"
+          
+          # Function AppのリソースIDを取得
+          FUNCTION_RESOURCE_ID=$(az functionapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --query id -o tsv)
+          
+          echo "Function App Resource ID: $FUNCTION_RESOURCE_ID"
+          
+          # アクセストークン取得（Federated Identity使用）
+          ACCESS_TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+          
+          # ZIP Deployエンドポイント（ARM API経由）
+          DEPLOY_URL="https://management.azure.com${FUNCTION_RESOURCE_ID}/extensions/onedeploy?api-version=2022-03-01"
+          
+          echo "Deploy URL: $DEPLOY_URL"
+          echo "Starting deployment via ARM API..."
+          
+          # Base64エンコードしたZIPファイルをJSON bodyとして送信
+          ZIP_BASE64=$(base64 -w 0 function-app.zip)
+          
+          # JSON bodyを作成
+          echo "{\"properties\":{\"type\":\"zip\",\"packageUri\":\"data:application/zip;base64,${ZIP_BASE64}\"}}" > deploy-payload.json
+          
+          # ARM API経由でデプロイ実行
+          DEPLOY_RESPONSE=$(curl -X PUT \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @deploy-payload.json \
+            "${DEPLOY_URL}" \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --max-time 600)
+          
+          HTTP_STATUS=$(echo "$DEPLOY_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response: $DEPLOY_RESPONSE"
+          
+          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ] || [ "$HTTP_STATUS" -eq 202 ]; then
+            echo "✅ Deployment initiated successfully via ARM API"
+          else
+            echo "❌ Deployment failed with HTTP status: $HTTP_STATUS"
+            exit 1
+          fi
+          
+          # クリーンアップ
+          rm -f deploy-payload.json
 
   cleanup:
     needs: [setup-runner, build-and-deploy]
