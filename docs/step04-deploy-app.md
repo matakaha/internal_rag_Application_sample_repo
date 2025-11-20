@@ -18,6 +18,7 @@
 - [internal_rag_Application_deployment_step_by_step](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step)の以下のステップが完了していること:
   - [Step 03 (GitHub Actions)](https://github.com/matakaha/internal_rag_Application_deployment_step_by_step/tree/main/bicep/step03-github-actions): GitHub Actions環境の構築
   - **Azure Container Registry (ACR) のセットアップ**: カスタムGitHub Runnerイメージ(`acrinternalragdev.azurecr.io/github-runner:latest`)が作成済みであること
+    - 詳細は **[付録: GitHub Runner用ACRイメージのセットアップ](appendix-acr-runner-setup.md)** を参照
 - GitHub Secretsが設定済みであること
 - Key Vaultに必要なシークレットが格納されていること
 
