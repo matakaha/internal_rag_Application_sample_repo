@@ -184,7 +184,10 @@ jobs:
       - name: Package application
         run: |
           # wwwroot直下にsrcディレクトリが配置されるようにZIPを作成
-          zip -r webapp.zip src -x "*.git*" -x "*src/node_modules/.cache/*"
+          # -qオプションで静かに、-rで再帰的に、Linuxパス区切り文字(/)を保証
+          cd src
+          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
+          cd ..
           
           # ZIPの内容を確認
           echo "=== ZIP Contents ==="
