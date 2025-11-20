@@ -256,9 +256,24 @@ env:
 
 **ACR認証方式**: ワークフローでは、Container InstanceのManaged Identityを使用してACRにアクセスします。Container InstanceとACRのPrivate Endpointは同じvNet内にあるため、vNet内部通信で安全にイメージをpullできます。ACRのパブリック公開は不要です。
 
+> 💡 **ヒント**: ワークフローには、閉域ネットワーク環境でも動作するように自動診断機能が組み込まれています。詳細は後述の「上級者向け: ワークフロー詳細解説」を参照してください。
+
 必要に応じて、環境変数を自分の環境に合わせて編集します。
 
 ### 4. コードの準備とプッシュ
+
+#### Web App用の設定(.deployment)
+
+Node.js Web Appのデプロイ時に、Azure側でのビルドを無効化する設定ファイルを作成します。
+
+`src/.deployment`ファイルを作成:
+
+```ini
+[config]
+SCM_DO_BUILD_DURING_DEPLOYMENT=false
+```
+
+> 📝 **Note**: この設定により、Self-hosted Runner上でビルドした`node_modules`をそのままデプロイできます。閉域ネットワーク環境では必須の設定です。
 
 #### ローカルでテスト(オプション)
 
@@ -511,6 +526,372 @@ az monitor app-insights query `
 
 # App Serviceログでエラーメッセージを確認
 ```
+
+### デプロイが400/401エラーで失敗する(SCMエンドポイントブロック)
+
+**症状**: デプロイステップで以下のようなエラーが発生:
+```
+ERROR: An error occurred during deployment. Status Code: 400
+Please visit https://app-name.scm.azurewebsites.net
+```
+または
+```
+Error: Failed to deploy web package to App Service. Conflict (STATUS CODE: 401)
+```
+
+**原因**: 閉域ネットワーク環境で、NSGやファイアウォールがSCMエンドポイント(`*.scm.azurewebsites.net`)へのアクセスをブロックしています。
+
+**対処法**:
+
+1. **ワークフローの診断ログを確認**:
+   ```powershell
+   # GitHub Actionsログで"Diagnose Network and Authentication"ステップを確認
+   # SCM_RESPONSE が "000" または "timeout" の場合、SCMエンドポイントがブロックされています
+   ```
+
+2. **ARM API デプロイメソッドが自動選択されているか確認**:
+   - ワークフローには自動診断機能が組み込まれています
+   - SCMエンドポイントがブロックされている場合、ARM API経由のデプロイに自動切り替わります
+   - ログで`deploy_method=arm`が設定されていることを確認してください
+
+3. **手動でARM APIデプロイを確認**:
+   ```powershell
+   # Functions用リソースIDを取得
+   $functionResourceId = az functionapp show `
+       --resource-group rg-internal-rag-dev `
+       --name func-internal-rag-dev `
+       --query id -o tsv
+   
+   # ARM APIエンドポイントの疎通確認(Self-hosted Runnerから)
+   curl -v "https://management.azure.com${functionResourceId}?api-version=2022-03-01"
+   ```
+
+4. **NSG設定の確認**:
+   ```powershell
+   # Container Instances用NSGを確認
+   az network nsg show `
+       --resource-group rg-internal-rag-dev `
+       --name nsg-container-instances-dev
+   
+   # 443番ポートのアウトバウンドルールを確認
+   # management.azure.com (AzureCloud service tag)へのアクセスが許可されているか確認
+   ```
+
+**補足**: ARM APIデプロイは`management.azure.com`を使用するため、SCMエンドポイントへのアクセスが不要です。Federated Identityで取得したBearer Tokenで認証します。
+
+### Python依存パッケージインストールエラー(PYTHONNOUSERSITE)
+
+**症状**: Functionsデプロイのビルドステップで以下のエラー:
+```
+Can not perform a '--user' install. User site-packages are disabled.
+```
+
+**原因**: GitHub Runnerイメージに設定された`PYTHONNOUSERSITE=1`環境変数が、pipのユーザーローカルインストールをブロックしています。
+
+**対処法**:
+
+ワークフローで以下の手順が実装されているか確認:
+
+```yaml
+- name: Install dependencies
+  run: |
+    # PYTHONNOUSERSITE環境変数を一時的に解除
+    unset PYTHONNOUSERSITE
+    unset PIP_NO_USER
+    
+    # venv環境でインストール
+    python -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+
+- name: Package Function App
+  run: |
+    # venvのパッケージを.python_packagesにコピー
+    mkdir -p .python_packages/lib/site-packages
+    cp -r venv/lib/python*/site-packages/* .python_packages/lib/site-packages/
+    zip -r function-app.zip . -x "*.git*" -x "*venv/*"
+```
+
+**確認ポイント**:
+1. `unset PYTHONNOUSERSITE`が実行されているか
+2. venv内でパッケージがインストールされているか
+3. `.python_packages/lib/site-packages/`にパッケージがコピーされているか
+4. ZIPアーカイブに`.python_packages`が含まれているか
+
+**デバッグコマンド**(Self-hosted Runnerから):
+```bash
+# venv内のパッケージ確認
+source venv/bin/activate
+pip list
+
+# .python_packages構造確認
+ls -la .python_packages/lib/site-packages/
+
+# ZIPアーカイブ内容確認
+unzip -l function-app.zip | grep python_packages
+```
+
+## 上級者向け: ワークフロー詳細解説
+
+> ⚠️ **このセクションについて**: 以下の内容は、ワークフローの内部動作を深く理解したい方、またはカスタマイズが必要な方向けです。基本的な使い方だけであれば読み飛ばしても問題ありません。
+
+### ネットワーク診断と適応的デプロイ戦略
+
+#### 概要: なぜ2つのデプロイ方法が必要なのか
+
+通常、Azure Web AppsやFunctionsへのデプロイは「SCMエンドポイント」(`*.scm.azurewebsites.net`)を使用します。しかし、完全閉域ネットワーク環境では、セキュリティポリシーによりこのエンドポイントがブロックされることがあります。
+
+そこで、このワークフローには**環境を自動判別し、適切なデプロイ方法を選択する機能**が組み込まれています。
+
+#### デプロイ方法の比較
+
+| 方式 | エンドポイント | 認証方式 | 利用シーン |
+|------|---------------|---------|----------|
+| **SCM方式** | `*.scm.azurewebsites.net` | Publishing Credentials | 標準的な環境 |
+| **ARM API方式** | `management.azure.com` | Federated Identity (Bearer Token) | 完全閉域環境(SCMブロック時) |
+
+#### 自動診断の仕組み
+
+ワークフローは以下の手順で環境を診断します:
+
+```yaml
+- name: Diagnose Network and Authentication
+  id: diagnose
+  run: |
+    # 1. SCMエンドポイントに接続テスト
+    SCM_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$SCM_URL" 2>&1 || echo "000")
+    
+    # 2. HTTPステータスコードで判定
+    if [ "$SCM_RESPONSE" = "401" ] || [ "$SCM_RESPONSE" = "403" ]; then
+      # 401/403 = エンドポイント到達可能(認証エラーだが接続はOK)
+      echo "deploy_method=scm" >> $GITHUB_OUTPUT
+    else
+      # 000/timeout = エンドポイント到達不可(ブロックされている)
+      echo "deploy_method=arm" >> $GITHUB_OUTPUT
+    fi
+```
+
+**判定ロジック**:
+- **HTTP 401/403**: エンドポイントには到達できている(認証が必要なだけ) → SCM方式を使用
+- **HTTP 000/timeout**: エンドポイントに到達できない(NSG/Firewallでブロック) → ARM API方式を使用
+
+#### SCM方式のデプロイ
+
+SCMエンドポイントが利用可能な場合、Publishing Credentialsを使用してZIPデプロイを実行します。
+
+```yaml
+- name: Deploy to Azure Functions (SCM method)
+  if: steps.diagnose.outputs.deploy_method == 'scm'
+  run: |
+    # Publishing Credentialsで認証
+    curl -X POST -u "$USERNAME:$PASSWORD" \
+      --data-binary @function-app.zip \
+      "https://$FUNCTIONAPP_NAME.scm.azurewebsites.net/api/zipdeploy"
+```
+
+**特徴**:
+- ✅ シンプルで高速
+- ✅ 従来の標準的な方法
+- ❌ SCMエンドポイントへのアクセスが必要
+
+#### ARM API方式のデプロイ
+
+SCMエンドポイントがブロックされている場合、Azure Resource Manager APIを使用してデプロイします。
+
+```yaml
+- name: Deploy to Azure Functions (ARM API method)
+  if: steps.diagnose.outputs.deploy_method == 'arm'
+  run: |
+    # 1. Federated Identityでアクセストークン取得
+    ACCESS_TOKEN=$(az account get-access-token \
+      --resource https://management.azure.com \
+      --query accessToken -o tsv)
+    
+    # 2. ZIPファイルをBase64エンコード
+    ZIP_BASE64=$(base64 -w 0 function-app.zip)
+    
+    # 3. OneDeploy APIにリクエスト
+    echo "{\"properties\":{\"type\":\"zip\",\"packageUri\":\"data:application/zip;base64,${ZIP_BASE64}\"}}" > deploy-payload.json
+    
+    curl -X PUT -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d @deploy-payload.json \
+      "https://management.azure.com${FUNCTION_RESOURCE_ID}/extensions/onedeploy?api-version=2022-03-01"
+```
+
+**特徴**:
+- ✅ SCMエンドポイント不要
+- ✅ `management.azure.com`は443番ポート(HTTPS)で閉域環境でも利用可能
+- ✅ Federated Identityで安全に認証
+- ⚠️ ZIPファイルをBase64エンコードするため、やや処理時間がかかる
+
+#### なぜARM APIは閉域環境でも動作するのか
+
+1. **エンドポイントの違い**:
+   - SCM: `*.scm.azurewebsites.net` (多くの閉域環境でブロック対象)
+   - ARM API: `management.azure.com` (Azureの基盤API、通常は許可されている)
+
+2. **通信経路**:
+   - NSGで443番ポート(HTTPS)のアウトバウンドが許可されていれば、ARM APIにアクセス可能
+   - Azure管理操作の基盤APIなので、ブロックされることは稀
+
+3. **認証方式**:
+   - Federated Identity(OIDC)で取得したBearer Tokenを使用
+   - シークレット管理が不要で、セキュアな認証が可能
+
+### Python依存パッケージのインストール詳細
+
+#### PYTHONNOUSERSITE環境変数とは
+
+GitHub Runnerイメージには`PYTHONNOUSERSITE=1`という環境変数が設定されています。
+
+**目的**: ユーザーローカルディレクトリ(`~/.local/lib/python*/site-packages`)へのpipインストールを無効化し、システム全体のパッケージのみを使用します。
+
+**理由**: Azure CLIとその依存パッケージの競合を防ぐためです。ユーザーローカルとシステムで異なるバージョンのパッケージが混在すると、Azure CLIが正常に動作しないことがあります。
+
+#### Functions デプロイ時の課題
+
+通常、`pip install -r requirements.txt`を実行すると、`PYTHONNOUSERSITE=1`の影響で以下のエラーが発生します:
+
+```
+Can not perform a '--user' install. User site-packages are disabled.
+```
+
+#### 解決策: venvを使った分離
+
+ワークフローでは、以下の手順で依存パッケージをインストールします:
+
+```yaml
+- name: Install dependencies
+  run: |
+    # 1. 環境変数を一時的に解除
+    unset PYTHONNOUSERSITE
+    unset PIP_NO_USER
+    
+    # 2. venv環境を作成
+    python -m venv venv
+    
+    # 3. venv環境内でパッケージインストール
+    source venv/bin/activate
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+```
+
+**ポイント**:
+- `unset`で環境変数を一時的に解除(このステップ内のみ有効)
+- venv環境内では`PYTHONNOUSERSITE`の影響を受けない
+- 次のステップでは元の環境変数が復元される
+
+#### Azure Functions用のパッケージング
+
+Azure Functionsは特定のディレクトリ構造を期待しています:
+
+```yaml
+- name: Package Function App
+  run: |
+    # 1. .python_packagesディレクトリを作成
+    mkdir -p .python_packages/lib/site-packages
+    
+    # 2. venvからパッケージをコピー
+    cp -r venv/lib/python*/site-packages/* .python_packages/lib/site-packages/
+    
+    # 3. ZIPアーカイブ作成(venvは除外)
+    zip -r function-app.zip . -x "*.git*" -x "*venv/*" -x "*__pycache__/*" -x "*.pyc"
+```
+
+**Azure Functionsの動作**:
+- デプロイ後、Functionsランタイムは`.python_packages/lib/site-packages/`を自動的にPython pathに追加
+- アプリケーションコードから`import`で直接利用可能
+- Azure側でのビルド不要(閉域環境で必須)
+
+#### ディレクトリ構造の例
+
+```
+function-app.zip
+├── function_app.py
+├── host.json
+├── requirements.txt
+└── .python_packages/
+    └── lib/
+        └── site-packages/
+            ├── azure/
+            ├── openai/
+            ├── flask/
+            └── ...(その他のパッケージ)
+```
+
+### Web App(.deployment)設定の詳細
+
+#### SCM_DO_BUILD_DURING_DEPLOYMENTとは
+
+Azure App Serviceには「Kudu」というデプロイエンジンがあり、デフォルトでは以下の動作をします:
+
+1. ZIPファイルを受信
+2. `package.json`を検出
+3. `npm install`を自動実行
+4. アプリケーションを起動
+
+#### 閉域環境での問題
+
+ステップ3の`npm install`は、npmレジストリ(`registry.npmjs.org`)にインターネット経由でアクセスします。閉域環境では:
+
+- ❌ npmレジストリにアクセスできない
+- ❌ ビルドが失敗する
+- ❌ デプロイが完了しない
+
+#### 解決策: ビルドの無効化
+
+`.deployment`ファイルで、Azure側のビルドを無効化します:
+
+```ini
+[config]
+SCM_DO_BUILD_DURING_DEPLOYMENT=false
+```
+
+**結果**:
+- ✅ Azure側は受け取ったファイルをそのままデプロイ
+- ✅ Self-hosted Runnerで事前にビルドした`node_modules`を使用
+- ✅ インターネットアクセス不要
+
+#### ワークフローでの対応
+
+Web Appのワークフローでは、以下のようにビルドとパッケージングを行います:
+
+```yaml
+- name: Build application
+  run: |
+    cd src
+    npm ci  # Self-hosted Runner上でインストール
+    
+- name: Package for deployment
+  run: |
+    cd src
+    zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
+    # node_modulesも含めてZIP化
+```
+
+**ポイント**:
+- `npm ci`はSelf-hosted Runner上で実行(npmレジストリアクセス可能)
+- `node_modules`をZIPに含める
+- Azure側ではビルドせずそのままデプロイ
+
+### まとめ: なぜこれらの工夫が必要か
+
+完全閉域ネットワーク環境では、以下の制約があります:
+
+1. **外部エンドポイントへのアクセス制限**
+   - SCMエンドポイント、npmレジストリ、PyPIなどがブロックされる
+   - → ARM API、事前ビルド、venv分離で対応
+
+2. **セキュリティポリシー**
+   - インターネット経由のパッケージダウンロード禁止
+   - → Self-hosted Runner上で全て事前準備
+
+3. **認証とアクセス制御**
+   - Private Endpointで保護されたリソース
+   - → Federated Identity、Managed Identityで安全に認証
+
+これらの工夫により、**完全閉域環境でも安全かつ確実にCI/CDパイプラインを実現**しています。
 
 ## 次のステップ
 

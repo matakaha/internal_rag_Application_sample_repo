@@ -26,17 +26,60 @@
 #### UI表示確認
 
 ```powershell
-# Azure FunctionsのURLを取得
+# Web Apps (Node.jsフロントエンド)のURLを取得
 $RESOURCE_GROUP = "rg-internal-rag-dev"
-$FUNCTIONAPP_NAME = "<your-functionapp-name>"
+$WEBAPP_NAME = "app-internal-rag-dev"  # あなたのWeb App名に変更
 
-$appUrl = az functionapp show `
+$webappUrl = az webapp show `
     --resource-group $RESOURCE_GROUP `
-    --name $FUNCTIONAPP_NAME `
+    --name $WEBAPP_NAME `
     --query defaultHostName -o tsv
 
-Write-Host "Application URL: https://$appUrl"
-Start-Process "https://$appUrl"
+Write-Host "Web Application URL: https://$webappUrl"
+Write-Host "ブラウザで開きます..."
+Start-Process "https://$webappUrl"
+```
+
+> 📝 **Note**: Web AppはExpress.jsで`src/public/index.html`を配信しています。ルーURL(`https://app-name.azurewebsites.net/`)でチャットUIが表示されます。
+
+**デフォルト画面が表示される場合の確認事項**:
+
+```powershell
+# 1. Web Appの状態を確認
+az webapp show `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME `
+    --query "{name:name, state:state, hostNames:hostNames}" `
+    -o json
+
+# 2. アプリケーションログを確認
+az webapp log tail `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME
+
+# 3. Node.jsプロセスが起動しているか確認
+# ログに"Listening on port 8000"または"Server started"などのメッセージがあるか確認
+
+# 4. 環境変数が設定されているか確認
+az webapp config appsettings list `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME `
+    --query "[?name=='AZURE_OPENAI_ENDPOINT' || name=='AZURE_SEARCH_ENDPOINT'].{name:name, value:value}" `
+    -o table
+```
+
+**問題がある場合の対処法**:
+
+```powershell
+# Web Appを再起動
+az webapp restart `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME
+
+# 再起動後にログを確認
+az webapp log tail `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME
 ```
 
 確認項目:
@@ -75,11 +118,11 @@ PowerShellでAPIを直接テストします。
 
 ```powershell
 # ヘルスチェック
-$healthResponse = Invoke-RestMethod -Uri "https://$appUrl/health"
+$healthResponse = Invoke-RestMethod -Uri "https://$webappUrl/health"
 Write-Host "Health Status: $($healthResponse.status)"
 
 # チャットAPIテスト
-$chatEndpoint = "https://$appUrl/api/chat"
+$chatEndpoint = "https://$webappUrl/api/chat"
 $headers = @{
     "Content-Type" = "application/json"
 }
@@ -89,7 +132,8 @@ $body = @{
 } | ConvertTo-Json
 
 try {
-    $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body
+    Write-Host "チャットAPIテスト中..." -ForegroundColor Yellow
+    $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body -TimeoutSec 60
     
     Write-Host "`n=== Chat API Response ===" -ForegroundColor Cyan
     Write-Host "Response: $($response.response)"
@@ -97,10 +141,18 @@ try {
     $response.sources | ForEach-Object {
         Write-Host "  - $($_.title): $($_.url)"
     }
+    Write-Host "`n✅ APIテスト成功" -ForegroundColor Green
 } catch {
     Write-Error "API Test Failed: $_"
+    Write-Host "エラー詳細: $($_.Exception.Message)" -ForegroundColor Red
+    
+    # デバッグ情報を取得
+    Write-Host "`nデバッグ: Web Appログを確認します..." -ForegroundColor Yellow
+    az webapp log tail --resource-group $RESOURCE_GROUP --name $WEBAPP_NAME --filter Error
 }
 ```
+
+> 📝 **Note**: チャットAPIはAzure OpenAIとAI Searchにアクセスするため、初回実行時は認証に時間がかかる場合があります(30秒〜60秒程度)。
 
 ### 3. RAG品質テスト
 
@@ -142,11 +194,11 @@ RAGシステムの品質を評価します。
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$AppUrl
+    [string]$WebAppUrl
 )
 
 $testCases = Get-Content "tests/test-cases.json" | ConvertFrom-Json
-$chatEndpoint = "https://$AppUrl/api/chat"
+$chatEndpoint = "https://$WebAppUrl/api/chat"
 $headers = @{"Content-Type" = "application/json"}
 
 $results = @()
@@ -158,7 +210,7 @@ foreach ($test in $testCases) {
     $body = @{message = $test.question} | ConvertTo-Json
     
     try {
-        $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body
+        $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body -TimeoutSec 60
         
         # キーワードチェック
         $keywordsFound = 0
@@ -214,7 +266,14 @@ Write-Host "Pass Rate: $passRate%"
 実行:
 
 ```powershell
-.\tests\test-rag-quality.ps1 -AppUrl $appUrl
+# Web AppのURLを取得
+$webappUrl = az webapp show `
+    --resource-group rg-internal-rag-dev `
+    --name app-internal-rag-dev `
+    --query defaultHostName -o tsv
+
+# テスト実行
+.\tests\test-rag-quality.ps1 -WebAppUrl $webappUrl
 ```
 
 ### 4. パフォーマンステスト
@@ -223,30 +282,54 @@ Write-Host "Pass Rate: $passRate%"
 
 ```powershell
 # レスポンスタイム測定スクリプト
-$chatEndpoint = "https://$appUrl/api/chat"
+$chatEndpoint = "https://$webappUrl/api/chat"
 $headers = @{"Content-Type" = "application/json"}
 $body = @{message = "イリオモテヤマネコについて教えてください"} | ConvertTo-Json
 
 $responseTimes = @()
 
+Write-Host "パフォーマンステスト開始 (10回実行)..." -ForegroundColor Cyan
+
 for ($i = 1; $i -le 10; $i++) {
     Write-Host "Request $i..." -NoNewline
     
     $startTime = Get-Date
-    $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body
-    $endTime = Get-Date
+    try {
+        $response = Invoke-RestMethod -Uri $chatEndpoint -Method Post -Headers $headers -Body $body -TimeoutSec 60
+        $endTime = Get-Date
+        
+        $responseTime = ($endTime - $startTime).TotalMilliseconds
+        $responseTimes += $responseTime
+        
+        Write-Host " $([math]::Round($responseTime, 2))ms" -ForegroundColor Yellow
+    } catch {
+        Write-Host " FAILED" -ForegroundColor Red
+        Write-Host "  Error: $($_.Exception.Message)"
+    }
     
-    $responseTime = ($endTime - $startTime).TotalMilliseconds
-    $responseTimes += $responseTime
-    
-    Write-Host " $([math]::Round($responseTime, 2))ms" -ForegroundColor Yellow
+    # 連続リクエストを避けるため少し待機
+    Start-Sleep -Seconds 2
 }
 
 # 統計
-Write-Host "`n=== Performance Statistics ===" -ForegroundColor Cyan
-Write-Host "Average: $([math]::Round(($responseTimes | Measure-Object -Average).Average, 2))ms"
-Write-Host "Min: $([math]::Round(($responseTimes | Measure-Object -Minimum).Minimum, 2))ms"
-Write-Host "Max: $([math]::Round(($responseTimes | Measure-Object -Maximum).Maximum, 2))ms"
+if ($responseTimes.Count -gt 0) {
+    Write-Host "`n=== Performance Statistics ===" -ForegroundColor Cyan
+    Write-Host "Average: $([math]::Round(($responseTimes | Measure-Object -Average).Average, 2))ms"
+    Write-Host "Min: $([math]::Round(($responseTimes | Measure-Object -Minimum).Minimum, 2))ms"
+    Write-Host "Max: $([math]::Round(($responseTimes | Measure-Object -Maximum).Maximum, 2))ms"
+    
+    # 分析
+    $avgTime = ($responseTimes | Measure-Object -Average).Average
+    if ($avgTime -lt 3000) {
+        Write-Host "✅ パフォーマンス良好 (3秒未満)" -ForegroundColor Green
+    } elseif ($avgTime -lt 10000) {
+        Write-Host "⚠️ パフォーマンス注意 (3〜10秒)" -ForegroundColor Yellow
+    } else {
+        Write-Host "❌ パフォーマンス改善が必要 (10秒以上)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "❌ 全てのリクエストが失敗しました" -ForegroundColor Red
+}
 ```
 
 #### 負荷テスト(オプション)
