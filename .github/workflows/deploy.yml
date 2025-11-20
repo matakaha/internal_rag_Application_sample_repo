@@ -183,8 +183,12 @@ jobs:
 
       - name: Package application
         run: |
-          cd src
-          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
+          # wwwroot直下にsrcディレクトリが配置されるようにZIPを作成
+          zip -r webapp.zip src -x "*.git*" -x "*src/node_modules/.cache/*"
+          
+          # ZIPの内容を確認
+          echo "=== ZIP Contents ==="
+          unzip -l webapp.zip | head -20
 
       - name: Diagnose Network and Authentication
         id: diagnose
