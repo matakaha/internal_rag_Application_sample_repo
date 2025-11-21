@@ -315,11 +315,13 @@ jobs:
           USERNAME=$(echo $PUBLISH_CREDS | jq -r .username)
           PASSWORD=$(echo $PUBLISH_CREDS | jq -r .password)
           
-          # ZIP Deploy via SCM endpoint
+          # wardeploy API を使用（zipdeployの代わり）
+          # wardeploy は ZIP の内容を wwwroot に直接展開する
+          echo "Deploying using wardeploy API..."
           curl -X POST \
             -u "$USERNAME:$PASSWORD" \
             --data-binary @webapp.zip \
-            "https://${{ env.WEBAPP_NAME }}.scm.azurewebsites.net/api/zipdeploy" \
+            "https://${{ env.WEBAPP_NAME }}.scm.azurewebsites.net/api/wardeploy" \
             -H "Content-Type: application/zip" \
             --max-time 600
           
