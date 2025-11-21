@@ -74,31 +74,45 @@ internal_rag_Application_sample_repo/
 ├── .github/
 │   └── workflows/
 │       ├── deploy.yml              # App Service用ワークフロー(フロントエンド)
-│       └── deploy-functions.yml    # Azure Functions向けワークフロー(バックエンド)
+│       └── deploy-functions.yml    # Azure Functions用ワークフロー(バックエンド)
 ├── scripts/
 │   ├── setup-runner.ps1            # Self-hosted Runner起動スクリプト
 │   ├── cleanup-runner.ps1          # Runnerクリーンアップスクリプト
 │   ├── create-index.ps1            # AI Searchインデックス作成
 │   ├── create-datasource.ps1       # データソース作成
-│   └── create-indexer.ps1          # インデクサー作成
+│   ├── create-indexer.ps1          # インデクサー作成
+│   └── get-azure-resources.ps1     # Azureリソース情報自動取得
 ├── src/                            # フロントエンド(App Service)
 │   ├── app.js                      # Express.js アプリケーション
 │   ├── package.json                # Node.js 依存関係
 │   ├── web.config                  # IIS設定(Azure App Service用)
 │   └── public/
 │       └── index.html              # チャットUI
-├── static/                         # Functions用静的ファイル(使用しない)
+├── static/                         # Functions用静的ファイル(オプション)
 │   └── index.html                  # チャットUI(Functions向け)
 ├── docs/
 │   ├── step01-setup-environment.md # Step 1: 環境準備
 │   ├── step02-data-preparation.md  # Step 2: データ準備
 │   ├── step03-indexing.md          # Step 3: AI Searchインデックス作成
 │   ├── step04-deploy-app.md        # Step 4: アプリケーションデプロイ
-│   └── step05-testing.md           # Step 5: テストと運用
+│   ├── step05-testing.md           # Step 5: テストと運用
+│   ├── appendix-acr-runner-setup.md    # 付録: ACR Runnerセットアップ
+│   ├── rebuild-runner-image.md     # Runnerイメージ再ビルド手順
+│   ├── local-development.md        # ローカル開発ガイド
+│   └── async-implementation-guide.md   # 非同期実装ガイド
+├── data/
+│   ├── raw/                        # ダウンロードしたCSVファイル
+│   ├── processed/                  # 処理済みJSONLファイル
+│   └── schema/                     # AI Searchスキーマ定義
 ├── function_app.py                 # Azure Functions アプリケーション(v2/バックエンド)
 ├── host.json                       # Functions ホスト設定
 ├── local.settings.json             # ローカル開発設定
-├── .funcignore                     # デプロイ除外ファイル
+├── Dockerfile                      # Web Appコンテナ定義
+├── Dockerfile.runner               # GitHub Runnerイメージ定義
+├── start.sh                        # Runner起動スクリプト
+├── .funcignore                     # デプロイ除外ファイル(Functions用)
+├── .dockerignore                   # Docker除外ファイル(Web App用)
+├── .dockerignore.runner            # Docker除外ファイル(Runner用)
 ├── .gitignore
 ├── requirements.txt                # Python依存関係
 ├── LICENSE
@@ -294,11 +308,12 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 ## 💰 コスト見積もり
 
 ### 開発環境コスト
-月額概算コスト: ¥16,000〜26,000
+月額概算コスト: ¥17,000〜27,000
 
 | サービス | 構成 | 月額概算 |
 |---------|------|---------|
 | App Service Plan (B1) | フロントエンド/バックエンド共有 | ￥5,000 |
+| Azure Container Registry | Basic | ￥600 |
 | Azure OpenAI | GPT-4 従量課金 | ￥3,000〜10,000 |
 | AI Search | Basic | ￥7,000 |
 | Storage Account | Standard | ￥500 |
@@ -306,12 +321,13 @@ VS Codeでのデバッグ設定例 (`.vscode/launch.json`):
 | その他(vNet, DNS等) | - | ￥500 |
 
 ### 本番環境コスト (Premium Plan推奨)
-月額概算コスト: ¥30,000〜40,000
+月額概算コスト: ¥31,000〜41,000
 
 | サービス | 構成 | 月額概算 |
 |---------|------|---------|
 | App Service Plan (EP1) | Premium Plan (フロントエンド) | ￥14,000 |
 | Azure Functions Plan (EP1) | Premium Plan (バックエンド) | ￥14,000 |
+| Azure Container Registry | Basic | ￥600 |
 | Azure OpenAI | GPT-4 従量課金 | ￥3,000〜10,000 |
 | AI Search | Basic | ￥7,000 |
 | Storage Account | Standard | ￥500 |

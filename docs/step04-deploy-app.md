@@ -2,6 +2,44 @@
 
 このステップでは、GitHub Actionsを使用してPythonチャットアプリケーションをAzure Functions (AppServicePlan)にデプロイします。
 
+> 📝 **初学者向け: CI/CDとは？**
+> 
+> **CI/CD**は、コードを自動的にテストしてデプロイする仕組みです。
+> 
+> **CI (Continuous Integration) = 継続的インテグレーション**:
+> - コードをGitHubにプッシュすると自動的にビルド・テスト
+> - 問題があればすぐに気づける
+> 
+> **CD (Continuous Deployment) = 継続的デプロイ**:
+> - テストが通ったら自動的にAzureにデプロイ
+> - 手作業なしで本番環境に反映
+> 
+> **GitHub Actionsとは？**:
+> - GitHubが提供する無料のCI/CDツール
+> - YAMLファイルでワークフロー(作業手順)を定義
+> - コードをプッシュするだけで自動実行
+> 
+> **このプロジェクトのワークフロー**:
+> ```
+> 1. コードをGitHubにpush
+>    ↓
+> 2. GitHub Actionsが自動起動
+>    ↓
+> 3. Self-hosted Runnerを起動 (閉域環境用)
+>    ↓
+> 4. 依存パッケージをインストール
+>    ↓
+> 5. Azure Functionsにデプロイ
+>    ↓
+> 6. Runnerを削除 (コスト削減)
+> ```
+> 
+> **Self-hosted Runnerとは？**:
+> - GitHub Actionsを実行するための「作業マシン」
+> - 通常はGitHubが用意したマシンを使うが、閉域環境では使えない
+> - このプロジェクトでは、Azure Container Instancesで動的に起動
+> - vNet内で実行されるため、Private Endpointにアクセス可能
+
 ## 📚 学習目標
 
 このステップを完了すると、以下ができるようになります:

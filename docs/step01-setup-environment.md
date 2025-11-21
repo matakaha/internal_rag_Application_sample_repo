@@ -328,9 +328,31 @@ Write-Host "✓ Local user permissions granted" -ForegroundColor Green
 
 > 📝 **Note**: ローカル開発では `az login` で認証した資格情報が使用されます。Azure Functions上では Managed Identity が使用されます。
 
-### 6. Azure接続テスト
+### 4. Azure接続テスト
 
 Managed Identityを使用してAzureリソースへの接続をテストします。
+
+> 📝 **初学者向け: Managed Identityとは？**
+> 
+> **Managed Identity**は、Azureが自動的に管理してくれる「アプリケーション専用の身分証明書」です。
+> 
+> **従来の方法 (APIキー)**:
+> - パスワードのような秘密の文字列をコードに書く
+> - 定期的に更新が必要
+> - 漏洩すると悪用される危険性
+> 
+> **Managed Identityの利点**:
+> - ✅ Azureが自動的に作成・管理
+> - ✅ パスワードを覚える必要なし
+> - ✅ 自動的に期限が更新される
+> - ✅ コードに秘密情報を書かなくて済む
+> 
+> **例え話**: 
+> - APIキー = 合い言葉を覚えて毎回言う
+> - Managed Identity = 顔認証で自動的に本人確認
+> 
+> このプロジェクトでは、Azure FunctionsとApp ServiceがManaged Identityを使って、
+> Azure OpenAIやAI Searchに安全にアクセスします。
 
 ```powershell
 # テストスクリプトを実行
@@ -341,6 +363,27 @@ python scripts/test-azure-connection.py
 > - **VPN接続なし**: Azure AI SearchやAzure OpenAIがPrivate Endpointのみでアクセス可能に構成されている場合、ローカル環境からの接続テストは失敗します
 > - **VPN接続あり**: vNetに接続できる場合、Azure OpenAIは接続可能ですが、AI SearchはPrivate DNS解決の設定により失敗する可能性があります
 > - **AI Searchインデックス未作成**: Step 3でインデックスを作成するまで、AI Search接続テストは失敗します(正常動作)
+> 
+> 💡 **初学者向け: Private Endpointとは？**
+> 
+> **Private Endpoint**は、Azureサービスを「社内ネットワークの一部」のように扱う仕組みです。
+> 
+> **通常のアクセス**: 
+> - インターネット経由で誰でもアクセス可能
+> - セキュリティリスクが高い
+> 
+> **Private Endpointを使った場合**:
+> - vNet(仮想ネットワーク)内からのみアクセス可能
+> - インターネットから完全に遮断
+> - 会社の内線電話のようなイメージ
+> 
+> **なぜローカルからアクセスできないのか？**
+> - あなたのパソコンはvNetの「外側」にいる
+> - Private Endpointは「内側」からしかアクセスできない
+> - VPN接続すればvNetの「内側」に入れる
+> 
+> このプロジェクトでは、すべてのAzureリソースがPrivate Endpointで保護されており、
+> Azure FunctionsやApp ServiceはvNet内に統合されているため、安全にアクセスできます。
 
 期待される出力 (Azure OpenAI):
 ```

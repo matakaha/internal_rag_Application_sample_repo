@@ -38,6 +38,17 @@ $webappUrl = az webapp show `
 Write-Host "Web Application URL: https://$webappUrl"
 Write-Host "ブラウザで開きます..."
 Start-Process "https://$webappUrl"
+
+# または環境変数から取得する場合
+# .envファイルから値を読み込む
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^([^#][^=]+)=(.*)$') {
+        $name = $matches[1].Trim()
+        $value = $matches[2].Trim()
+        Set-Variable -Name $name -Value $value -Scope Script
+    }
+}
+Start-Process "https://$($env:WEBAPP_NAME).azurewebsites.net"
 ```
 
 > 📝 **Note**: Web AppはExpress.jsで`src/public/index.html`を配信しています。ルーURL(`https://app-name.azurewebsites.net/`)でチャットUIが表示されます。
@@ -166,14 +177,14 @@ RAGシステムの品質を評価します。
 [
   {
     "id": 1,
-    "question": "イリオモテヤマネコは絶滅危惧種ですか?",,
-    "expected_keywords": ["デジタル社会", "司令塔", "推進"],
+    "question": "イリオモテヤマネコは絶滅危惧種ですか?",
+    "expected_keywords": ["絶滅危惧", "CR", "ネコ科"],
     "should_have_sources": true
   },
   {
     "id": 2,
-    "question": "マイナンバーカードとは?",
-    "expected_keywords": ["個人番号", "身分証明", "行政サービス"],
+    "question": "ライチョウの生息地はどこですか?",
+    "expected_keywords": ["高山", "アルプス", "生息"],
     "should_have_sources": true
   },
   {
