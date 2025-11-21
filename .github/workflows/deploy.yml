@@ -152,17 +152,19 @@ jobs:
             exit 1
           fi
 
-  build-and-deploy:
-    needs: setup-runner
-    runs-on: self-hosted
+  build-and-push-image:
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    outputs:
+      image-name: ${{ steps.docker-build.outputs.image-name }}
+      image-tag: ${{ steps.docker-build.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Azure Login (on self-hosted runner)
+      - name: Azure Login
         uses: azure/login@v1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -170,6 +172,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build and Push Docker Image to ACR
+        id: docker-build
         run: |
           echo "=== Building Docker Image ==="
           
@@ -196,15 +199,24 @@ jobs:
           echo "✅ Image pushed successfully"
           echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-        id: docker-build
+
+  deploy-webapp:
+    needs: [setup-runner, build-and-push-image]
+    runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Configure Web App for Container Deployment
         run: |
           echo "=== Configuring Web App for Container ==="
           
           ACR_NAME="acrinternalragdev"
-          IMAGE_NAME="${{ steps.docker-build.outputs.image-name }}"
-          IMAGE_TAG="${{ steps.docker-build.outputs.image-tag }}"
+          IMAGE_NAME="${{ needs.build-and-push-image.outputs.image-name }}"
+          IMAGE_TAG="${{ needs.build-and-push-image.outputs.image-tag }}"
           
           # Web App の Container 設定を更新
           az webapp config container set \
@@ -225,6 +237,13 @@ jobs:
               WEBSITES_PORT=8000
           
           echo "✅ Web App configured for container deployment"
+
+      - name: Azure Login (on self-hosted runner)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Restart Web App
         run: |
@@ -247,7 +266,7 @@ jobs:
           echo "✅ Container deployment completed"
 
   cleanup:
-    needs: [setup-runner, build-and-deploy]
+    needs: [setup-runner, build-and-push-image, deploy-webapp]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
