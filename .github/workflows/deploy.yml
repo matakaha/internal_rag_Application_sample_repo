@@ -256,35 +256,72 @@ jobs:
 
       - name: Deploy to Azure Web Apps
         run: |
-          echo "=== Deploying to Azure Web App ==="
+          echo "=== Deploying to Azure Web App (Closed Network) ==="
           
           # ZIPファイルのサイズを確認
           ZIP_SIZE=$(stat -c%s webapp.zip 2>/dev/null || stat -f%z webapp.zip 2>/dev/null || echo "unknown")
           echo "ZIP file size: $ZIP_SIZE bytes"
           
-          # 先にWeb Appを停止（デプロイ中の競合を防ぐ）
-          echo "Stopping Web App to ensure clean deployment..."
+          # Web AppのリソースIDを取得
+          WEBAPP_RESOURCE_ID=$(az webapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --query id -o tsv)
+          
+          echo "Web App Resource ID: $WEBAPP_RESOURCE_ID"
+          
+          # 先にWeb Appを停止
+          echo "Stopping Web App..."
           az webapp stop \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }}
           
           sleep 5
           
-          # Azure CLIでデプロイ（再起動なし）
-          echo "Deploying using 'az webapp deploy'..."
-          az webapp deploy \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${{ env.WEBAPP_NAME }} \
-            --src-path webapp.zip \
-            --type zip \
-            --clean true \
-            --restart false \
-            --async false
+          # アクセストークン取得
+          ACCESS_TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
           
-          echo "✅ Deployment package uploaded"
+          # ZIPファイルをBase64エンコード
+          echo "Encoding ZIP file..."
+          ZIP_BASE64=$(base64 -w 0 webapp.zip)
+          
+          # ARM API経由でデプロイ（OneDeploy API）
+          DEPLOY_URL="https://management.azure.com${WEBAPP_RESOURCE_ID}/extensions/onedeploy?api-version=2022-03-01"
+          
+          echo "Deploying via ARM API..."
+          echo "Deploy URL: $DEPLOY_URL"
+          
+          # JSON bodyを作成
+          echo "{\"properties\":{\"type\":\"zip\",\"packageUri\":\"data:application/zip;base64,${ZIP_BASE64}\"}}" > deploy-payload.json
+          
+          # デプロイ実行
+          DEPLOY_RESPONSE=$(curl -X PUT \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @deploy-payload.json \
+            "${DEPLOY_URL}" \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --max-time 300 \
+            -s)
+          
+          HTTP_STATUS=$(echo "$DEPLOY_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ] || [ "$HTTP_STATUS" -eq 202 ]; then
+            echo "✅ Deployment initiated successfully"
+          else
+            echo "❌ Deployment failed with HTTP status: $HTTP_STATUS"
+            echo "Response: $DEPLOY_RESPONSE"
+            exit 1
+          fi
+          
+          # クリーンアップ
+          rm -f deploy-payload.json
           
           # デプロイ完了を待機
-          sleep 10
+          echo "Waiting for deployment to complete..."
+          sleep 20
           
           # Web Appを起動
           echo "Starting Web App..."
@@ -304,25 +341,7 @@ jobs:
             --query "{name:name, state:state, defaultHostName:defaultHostName}" \
             -o json
           
-          # ヘルスチェック
-          echo ""
-          echo "=== Health Check ==="
-          HEALTH_URL="https://${{ env.WEBAPP_NAME }}.azurewebsites.net/health"
-          echo "Checking: $HEALTH_URL"
-          
-          for i in {1..10}; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
-            echo "Attempt $i: HTTP $HTTP_STATUS"
-            
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo "✅ Application is healthy!"
-              break
-            fi
-            
-            sleep 10
-          done
-          
-          echo "✅ Deployment verification completed"
+          echo "✅ Deployment completed"
 
   cleanup:
     needs: [setup-runner, build-and-deploy]
