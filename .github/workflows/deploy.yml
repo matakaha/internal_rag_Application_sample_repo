@@ -169,6 +169,22 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Configure Web App Settings
+        run: |
+          echo "=== Configuring Web App Settings ==="
+          az webapp config appsettings set \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              AZURE_OPENAI_ENDPOINT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-OPENAI-ENDPOINT/)" \
+              AZURE_OPENAI_DEPLOYMENT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-OPENAI-DEPLOYMENT/)" \
+              AZURE_SEARCH_ENDPOINT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-SEARCH-ENDPOINT/)" \
+              AZURE_SEARCH_INDEX="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-SEARCH-INDEX/)" \
+              WEBSITE_NODE_DEFAULT_VERSION="~18"
+          
+          echo "✅ Web App settings configured"
+
       - name: Install dependencies
         working-directory: ./src
         run: |
@@ -184,13 +200,10 @@ jobs:
       - name: Package application
         run: |
           # wwwroot直下にファイルが配置されるようにZIPを作成
-          # -qオプションで静かに、-rで再帰的に、Linuxパス区切り文字(/)を保証
+          # .deploymentは含めない（src/配下にデプロイされるのを防ぐため）
           cd src
-          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*" -x "*.deployment" -x "*web.config"
+          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*" -x ".deployment"
           cd ..
-          
-          # .deploymentとweb.configをZIPのルートに追加（デプロイ設定用）
-          zip -j webapp.zip src/.deployment src/web.config
           
           # ZIPの内容を確認
           echo "=== ZIP Contents ==="
