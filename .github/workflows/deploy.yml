@@ -177,10 +177,11 @@ jobs:
             --name ${{ env.WEBAPP_NAME }} \
             --settings \
               SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-              AZURE_OPENAI_ENDPOINT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-OPENAI-ENDPOINT/)" \
-              AZURE_OPENAI_DEPLOYMENT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-OPENAI-DEPLOYMENT/)" \
-              AZURE_SEARCH_ENDPOINT="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-SEARCH-ENDPOINT/)" \
-              AZURE_SEARCH_INDEX="@Microsoft.KeyVault(SecretUri=https://${{ secrets.KEY_VAULT_NAME }}.vault.azure.net/secrets/AZURE-SEARCH-INDEX/)" \
+              WEBSITE_RUN_FROM_PACKAGE=1 \
+              AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+              AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+              AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
+              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
               WEBSITE_NODE_DEFAULT_VERSION="~18"
           
           echo "✅ Web App settings configured"
@@ -200,10 +201,20 @@ jobs:
       - name: Package application
         run: |
           # wwwroot直下にファイルが配置されるようにZIPを作成
-          # .deploymentは含めない（src/配下にデプロイされるのを防ぐため）
-          cd src
-          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*" -x ".deployment"
+          # RunFromPackageモードでsrcフォルダが作られないようにする
+          echo "=== Creating deployment package ==="
+          
+          # 一時ディレクトリを作成してファイルをコピー
+          mkdir -p deploy_temp
+          cp -r src/* deploy_temp/
+          
+          # deploy_tempの内容をZIPに圧縮（フォルダ構造なし）
+          cd deploy_temp
+          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*" -x ".deployment" -x "web.config"
           cd ..
+          
+          # クリーンアップ
+          rm -rf deploy_temp
           
           # ZIPの内容を確認
           echo "=== ZIP Contents ==="
