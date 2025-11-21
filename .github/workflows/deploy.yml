@@ -169,174 +169,93 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Configure Web App Settings
+      - name: Get ACR Managed Identity
+        id: get-acr-identity
         run: |
-          echo "=== Configuring Web App Settings ==="
+          # ACR用のUser Assigned Managed Identityを取得
+          ACR_IDENTITY_ID=$(az identity show \
+            --name "id-aci-runner-${GITHUB_RUN_ID}" \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query id -o tsv)
           
-          # WEBSITE_RUN_FROM_PACKAGEを削除（ファイルを展開するため）
-          az webapp config appsettings delete \
+          echo "acr-identity-id=$ACR_IDENTITY_ID" >> $GITHUB_OUTPUT
+          echo "Using ACR Identity: $ACR_IDENTITY_ID"
+
+      - name: Build and Push Docker Image to ACR
+        run: |
+          echo "=== Building Docker Image ==="
+          
+          ACR_NAME="acrinternalragdev"
+          IMAGE_NAME="webapp-frontend"
+          IMAGE_TAG="$(date +%s)"
+          FULL_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          LATEST_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest"
+          
+          echo "Building image: $FULL_IMAGE_NAME"
+          
+          # Dockerイメージをビルド
+          docker build -t $FULL_IMAGE_NAME -t $LATEST_IMAGE_NAME .
+          
+          # ACRにログイン（Managed Identityを使用）
+          echo "Logging in to ACR..."
+          az acr login --name $ACR_NAME --identity ${{ steps.get-acr-identity.outputs.acr-identity-id }}
+          
+          # ACRにプッシュ
+          echo "Pushing image to ACR..."
+          docker push $FULL_IMAGE_NAME
+          docker push $LATEST_IMAGE_NAME
+          
+          echo "✅ Image pushed successfully"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Configure Web App for Container Deployment
+        run: |
+          echo "=== Configuring Web App for Container ==="
+          
+          ACR_NAME="acrinternalragdev"
+          IMAGE_NAME="${{ env.IMAGE_NAME }}"
+          IMAGE_TAG="${{ env.IMAGE_TAG }}"
+          
+          # Web App の Container 設定を更新
+          az webapp config container set \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
-            --setting-names WEBSITE_RUN_FROM_PACKAGE || true
+            --docker-custom-image-name "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}" \
+            --docker-registry-server-url "https://${ACR_NAME}.azurecr.io"
           
-          # 必要な設定を追加
+          # 環境変数を設定
           az webapp config appsettings set \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
             --settings \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
               AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
               AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
               AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
               AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
-              WEBSITE_NODE_DEFAULT_VERSION="~18"
+              WEBSITES_PORT=8000
           
-          # 起動コマンドを設定
-          echo "Setting startup command..."
-          az webapp config set \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${{ env.WEBAPP_NAME }} \
-            --startup-file "npm start"
-          
-          echo "✅ Web App settings configured"
+          echo "✅ Web App configured for container deployment"
 
-      - name: Install dependencies
-        working-directory: ./src
+      - name: Restart Web App
         run: |
-          npm install
-
-      - name: Build application
-        working-directory: ./src
-        run: |
-          echo "Building Node.js application..."
-          # ビルドが必要な場合はここに追加
-          # npm run build
-
-      - name: Package application
-        run: |
-          # wwwroot直下にファイルが配置されるようにZIPを作成
-          echo "=== Creating deployment package ==="
+          echo "Restarting Web App to pull new container image..."
           
-          # 一時ディレクトリを作成してファイルをコピー（node_modules含む）
-          mkdir -p deploy_temp
-          cp -r src/* deploy_temp/
-          
-          # node_modulesが存在することを確認
-          if [ ! -d "deploy_temp/node_modules" ]; then
-            echo "❌ Error: node_modules not found in src/"
-            echo "Make sure 'npm install' step completed successfully"
-            exit 1
-          fi
-          
-          echo "✅ node_modules found, proceeding with packaging..."
-          
-          # deploy_tempの内容をZIPに圧縮
-          cd deploy_temp
-          zip -r ../webapp.zip . \
-            -x "*.git*" \
-            -x "*node_modules/.cache/*" \
-            -x ".deployment" \
-            -x "web.config"
-          cd ..
-          
-          # クリーンアップ
-          rm -rf deploy_temp
-          
-          # ZIPの内容を確認（node_modulesが含まれているか）
-          echo "=== ZIP Contents ==="
-          unzip -l webapp.zip | head -30
-          echo ""
-          echo "=== Checking node_modules in ZIP ==="
-          if unzip -l webapp.zip | grep -q "node_modules/express/"; then
-            echo "✅ express module found in ZIP"
-          else
-            echo "❌ express module NOT found in ZIP"
-            exit 1
-          fi
-
-      - name: Deploy to Azure Web Apps
-        run: |
-          echo "=== Deploying to Azure Web App via Storage Account ==="
-          
-          # ZIPファイルのサイズを確認
-          ZIP_SIZE=$(stat -c%s webapp.zip 2>/dev/null || stat -f%z webapp.zip 2>/dev/null || echo "unknown")
-          echo "ZIP file size: $ZIP_SIZE bytes"
-          
-          # Storage Accountの名前を取得（既存のものを使用）
-          STORAGE_ACCOUNT=$(az storage account list \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "[0].name" -o tsv)
-          
-          echo "Using Storage Account: $STORAGE_ACCOUNT"
-          
-          # コンテナを作成（既存の場合はスキップ）
-          az storage container create \
-            --name deployments \
-            --account-name $STORAGE_ACCOUNT \
-            --auth-mode login || true
-          
-          # ZIPファイルをBlobにアップロード
-          BLOB_NAME="webapp-$(date +%s).zip"
-          echo "Uploading to blob: $BLOB_NAME"
-          
-          az storage blob upload \
-            --account-name $STORAGE_ACCOUNT \
-            --container-name deployments \
-            --name $BLOB_NAME \
-            --file webapp.zip \
-            --auth-mode login \
-            --overwrite
-          
-          # SAS URLを生成（24時間有効）
-          EXPIRY=$(date -u -d '1 day' '+%Y-%m-%dT%H:%MZ' 2>/dev/null || date -u -v+1d '+%Y-%m-%dT%H:%MZ')
-          
-          PACKAGE_URL=$(az storage blob generate-sas \
-            --account-name $STORAGE_ACCOUNT \
-            --container-name deployments \
-            --name $BLOB_NAME \
-            --permissions r \
-            --expiry $EXPIRY \
-            --auth-mode login \
-            --as-user \
-            --full-uri \
-            -o tsv)
-          
-          echo "Package URL generated"
-          
-          # Web Appを停止
-          echo "Stopping Web App..."
-          az webapp stop \
+          az webapp restart \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }}
           
-          sleep 5
-          
-          # WEBSITE_RUN_FROM_PACKAGEにSAS URLを設定
-          echo "Setting WEBSITE_RUN_FROM_PACKAGE..."
-          az webapp config appsettings set \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${{ env.WEBAPP_NAME }} \
-            --settings WEBSITE_RUN_FROM_PACKAGE="$PACKAGE_URL"
-          
-          # Web Appを起動
-          echo "Starting Web App..."
-          az webapp start \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${{ env.WEBAPP_NAME }}
-          
-          # 起動を待機
           echo "Waiting for application to start..."
           sleep 30
           
           # Web Appの状態を確認
-          echo "Checking Web App status..."
           az webapp show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
             --query "{name:name, state:state, defaultHostName:defaultHostName}" \
             -o json
           
-          echo "✅ Deployment completed using Run-From-Package"
+          echo "✅ Container deployment completed"
 
   cleanup:
     needs: [setup-runner, build-and-deploy]

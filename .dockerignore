@@ -1,0 +1,44 @@
+# Git関連
+.git
+.gitignore
+.github
+
+# ドキュメント
+*.md
+LICENSE
+docs/
+
+# データファイル
+data/
+tests/
+verify-download.jsonl
+
+# ログ
+app-logs/
+webapp-logs/
+webapp-logs-latest/
+webapp-logs-new/
+
+# Python関連
+*.py
+__pycache__/
+*.pyc
+
+# Azure Functions関連
+function_app.py
+host.json
+local.settings.json
+requirements.txt
+
+# デプロイ・スクリプト関連
+scripts/
+Dockerfile.runner
+start.sh
+startup.sh
+check_encoding.py
+
+# 開発用ファイル
+.vscode/
+.env
+.env.local
+node_modules/
