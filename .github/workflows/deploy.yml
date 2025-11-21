@@ -201,24 +201,44 @@ jobs:
       - name: Package application
         run: |
           # wwwroot直下にファイルが配置されるようにZIPを作成
-          # RunFromPackageモードでsrcフォルダが作られないようにする
           echo "=== Creating deployment package ==="
           
-          # 一時ディレクトリを作成してファイルをコピー
+          # 一時ディレクトリを作成してファイルをコピー（node_modules含む）
           mkdir -p deploy_temp
           cp -r src/* deploy_temp/
           
-          # deploy_tempの内容をZIPに圧縮（フォルダ構造なし）
+          # node_modulesが存在することを確認
+          if [ ! -d "deploy_temp/node_modules" ]; then
+            echo "❌ Error: node_modules not found in src/"
+            echo "Make sure 'npm install' step completed successfully"
+            exit 1
+          fi
+          
+          echo "✅ node_modules found, proceeding with packaging..."
+          
+          # deploy_tempの内容をZIPに圧縮
           cd deploy_temp
-          zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*" -x ".deployment" -x "web.config"
+          zip -r ../webapp.zip . \
+            -x "*.git*" \
+            -x "*node_modules/.cache/*" \
+            -x ".deployment" \
+            -x "web.config"
           cd ..
           
           # クリーンアップ
           rm -rf deploy_temp
           
-          # ZIPの内容を確認
+          # ZIPの内容を確認（node_modulesが含まれているか）
           echo "=== ZIP Contents ==="
-          unzip -l webapp.zip | head -20
+          unzip -l webapp.zip | head -30
+          echo ""
+          echo "=== Checking node_modules in ZIP ==="
+          if unzip -l webapp.zip | grep -q "node_modules/express/"; then
+            echo "✅ express module found in ZIP"
+          else
+            echo "❌ express module NOT found in ZIP"
+            exit 1
+          fi
 
       - name: Diagnose Network and Authentication
         id: diagnose
