@@ -1,6 +1,25 @@
 #!/bin/bash
 set -e
 
+# Dockerデーモンをバックグラウンドで起動
+echo "=== Starting Docker Daemon ==="
+dockerd > /var/log/dockerd.log 2>&1 &
+
+# Dockerデーモンが起動するまで待機
+echo "Waiting for Docker daemon to start..."
+for i in {1..30}; do
+    if docker info > /dev/null 2>&1; then
+        echo "✅ Docker daemon is running"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "❌ Docker daemon failed to start"
+        cat /var/log/dockerd.log
+        exit 1
+    fi
+    sleep 1
+done
+
 # デバッグ情報
 echo "=== GitHub Runner Startup ==="
 echo "Runner Name: ${RUNNER_NAME:-runner-$(hostname)}"
@@ -26,14 +45,15 @@ if [ -z "$RUNNER_TOKEN" ] || [ -z "$RUNNER_REPOSITORY_URL" ]; then
 fi
 
 echo "=== Configuring GitHub Runner ==="
-./config.sh \
-    --url "${RUNNER_REPOSITORY_URL}" \
-    --token "${RUNNER_TOKEN}" \
-    --name "${RUNNER_NAME:-runner-$(hostname)}" \
-    --work "${RUNNER_WORK_DIRECTORY:-_work}" \
-    --labels "${RUNNER_LABELS:-self-hosted}" \
+# runnerユーザーとして実行
+su - runner -c "cd /actions-runner && ./config.sh \
+    --url \"${RUNNER_REPOSITORY_URL}\" \
+    --token \"${RUNNER_TOKEN}\" \
+    --name \"${RUNNER_NAME:-runner-$(hostname)}\" \
+    --work \"${RUNNER_WORK_DIRECTORY:-_work}\" \
+    --labels \"${RUNNER_LABELS:-self-hosted}\" \
     --unattended \
-    --replace
+    --replace"
 
 echo "=== Starting GitHub Runner ==="
-./run.sh
+su - runner -c "cd /actions-runner && ./run.sh"

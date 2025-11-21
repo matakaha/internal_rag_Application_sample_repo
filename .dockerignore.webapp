@@ -20,6 +20,7 @@ webapp-logs-latest/
 webapp-logs-new/
 
 # Python関連
+*.py
 __pycache__/
 *.pyc
 
@@ -31,13 +32,10 @@ requirements.txt
 
 # デプロイ・スクリプト関連
 scripts/
+Dockerfile.runner
+start.sh
 startup.sh
 check_encoding.py
-
-# Web App関連 (Runner には不要)
-src/
-Dockerfile
-.dockerignore
 
 # 開発用ファイル
 .vscode/

@@ -639,6 +639,15 @@ az account set --subscription "<subscription-id>"
 - `Dockerfile.runner`: GitHub Runnerのコンテナイメージ定義
 - `start.sh`: ランナー起動スクリプト(ネットワーク診断・デバッグログ含む)
 
+### 初回ビルド vs 再ビルド
+
+| タイミング | 手順 | 説明 |
+|-----------|------|------|
+| **初回セットアップ時** | このドキュメントの手順に従う | Docker なしの基本 Runner イメージ |
+| **Docker 追加後** | [rebuild-runner-image.md](rebuild-runner-image.md) を参照 | Web App コンテナビルド用に Docker を追加 |
+
+> **Note**: Web App をコンテナ化してデプロイする場合は、Runner に Docker をインストールする必要があります。詳細は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
+
 ### ACRビルドが必要なケース
 
 以下の場合、ACRで新しいイメージをビルドする必要があります:
@@ -651,6 +660,22 @@ az account set --subscription "<subscription-id>"
 | GitHub Runner バージョンアップ | ✅ 推奨 | 最新機能・修正を反映 |
 | ワークフローファイルのみ修正 | ❌ 不要 | イメージは変更なし |
 | 環境変数のみ変更 | ❌ 不要 | ランタイムで設定される |
+
+### 初回ビルドコマンド
+
+> **Note**: 初回セットアップ時は以下のコマンドを使用してください。Docker を追加した再ビルドの場合は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
+
+### ACR パブリックアクセスの一時的な有効化
+
+ACR Tasks でビルドする場合、ビルドエージェントがパブリック IP からアクセスするため、一時的にパブリックアクセスを許可する必要があります:
+
+```powershell
+# 1. パブリックアクセスを有効化
+az acr update --name acrinternalragdev --public-network-enabled true --default-action Allow
+
+# 2. 設定が反映されるまで待機
+Start-Sleep -Seconds 30
+```
 
 ### ビルドコマンド
 
@@ -668,9 +693,12 @@ az acr build `
   --registry acrinternalragdev `
   --resource-group rg-internal-rag-dev `
   --image github-runner:latest `
-  --image github-runner:v1.2.0 `
+  --image github-runner:v1.0.0 `
   --file Dockerfile.runner `
   .
+
+# ACR パブリックアクセスを無効化（セキュリティ強化）
+az acr update --name acrinternalragdev --public-network-enabled false --default-action Deny
 ```
 
 **重要**: カレントディレクトリがリポジトリルート(`internal_rag_Application_sample_repo`)であることを確認してください。

@@ -169,36 +169,42 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and Push Docker Image using ACR Tasks
-        id: acr-build
+      - name: Build and Push Docker Image to ACR
         run: |
-          echo "=== Building Docker Image using ACR Tasks ==="
+          echo "=== Building Docker Image ==="
           
           ACR_NAME="acrinternalragdev"
           IMAGE_NAME="webapp-frontend"
           IMAGE_TAG="$(date +%s)"
+          FULL_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          LATEST_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest"
           
-          echo "Building image: ${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          echo "Building image: $FULL_IMAGE_NAME"
           
-          # ACR Tasks でビルド（Docker不要、クラウド上で実行）
-          az acr build \
-            --registry $ACR_NAME \
-            --image ${IMAGE_NAME}:${IMAGE_TAG} \
-            --image ${IMAGE_NAME}:latest \
-            --file Dockerfile \
-            .
+          # Dockerイメージをビルド
+          docker build -t $FULL_IMAGE_NAME -t $LATEST_IMAGE_NAME .
           
-          echo "✅ Image built and pushed successfully"
+          # ACRにログイン（Azure CLI認証を使用）
+          echo "Logging in to ACR..."
+          az acr login --name $ACR_NAME
+          
+          # ACRにプッシュ
+          echo "Pushing image to ACR..."
+          docker push $FULL_IMAGE_NAME
+          docker push $LATEST_IMAGE_NAME
+          
+          echo "✅ Image pushed successfully"
           echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+        id: docker-build
 
       - name: Configure Web App for Container Deployment
         run: |
           echo "=== Configuring Web App for Container ==="
           
           ACR_NAME="acrinternalragdev"
-          IMAGE_NAME="${{ steps.acr-build.outputs.image-name }}"
-          IMAGE_TAG="${{ steps.acr-build.outputs.image-tag }}"
+          IMAGE_NAME="${{ steps.docker-build.outputs.image-name }}"
+          IMAGE_TAG="${{ steps.docker-build.outputs.image-tag }}"
           
           # Web App の Container 設定を更新
           az webapp config container set \

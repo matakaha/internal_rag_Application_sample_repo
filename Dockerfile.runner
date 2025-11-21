@@ -1,7 +1,7 @@
 # Microsoft公式のUbuntuイメージを使用
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-# 必要なパッケージをインストール (.NET 6.0依存関係、Python 3.11、Node.js含む)
+# 必要なパッケージをインストール (.NET 6.0依存関係、Python 3.11、Node.js、Docker含む)
 RUN tdnf install -y \
     ca-certificates \
     curl \
@@ -18,6 +18,8 @@ RUN tdnf install -y \
     npm \
     zip \
     unzip \
+    moby-engine \
+    moby-cli \
     && tdnf clean all
 
 # Azure CLIをpipでインストール (CBL Mariner 2.0用リポジトリが利用不可のため)
@@ -32,6 +34,9 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # GitHub Runner用の非rootユーザーを作成
 RUN useradd -m -s /bin/bash runner
+
+# runnerユーザーをdockerグループに追加
+RUN groupadd -f docker && usermod -aG docker runner
 
 # runnerユーザーがローカルpipインストールを行わないようPYTHONUSERBASEを無効化
 # システムグローバルのパッケージを優先使用
@@ -52,7 +57,8 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-# 非rootユーザーに切り替え
-USER runner
+# Docker socket用のディレクトリを作成
+RUN mkdir -p /var/run
 
+# rootユーザーのままエントリーポイントを実行（Dockerデーモン起動のため）
 ENTRYPOINT ["/start.sh"]
