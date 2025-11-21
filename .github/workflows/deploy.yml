@@ -245,8 +245,8 @@ jobs:
           echo "=== Deploying to Azure Web App ==="
           
           # ZIPファイルのサイズを確認
-          ZIP_SIZE=$(ls -lh webapp.zip | awk '{print $5}')
-          echo "ZIP file size: $ZIP_SIZE"
+          ZIP_SIZE=$(stat -c%s webapp.zip 2>/dev/null || stat -f%z webapp.zip 2>/dev/null || echo "unknown")
+          echo "ZIP file size: $ZIP_SIZE bytes"
           
           # Azure CLIでデプロイ（ARM API経由で動作するため閉域でもOK）
           echo "Deploying using 'az webapp deploy'..."
