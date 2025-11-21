@@ -172,12 +172,19 @@ jobs:
       - name: Configure Web App Settings
         run: |
           echo "=== Configuring Web App Settings ==="
+          
+          # WEBSITE_RUN_FROM_PACKAGEを削除（ファイルを展開するため）
+          az webapp config appsettings delete \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --setting-names WEBSITE_RUN_FROM_PACKAGE || true
+          
+          # 必要な設定を追加
           az webapp config appsettings set \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.WEBAPP_NAME }} \
             --settings \
               SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-              WEBSITE_RUN_FROM_PACKAGE=1 \
               AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
               AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
               AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
