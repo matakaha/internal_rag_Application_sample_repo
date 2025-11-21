@@ -256,21 +256,54 @@ jobs:
 
       - name: Deploy to Azure Web Apps
         run: |
-          echo "=== Deploying to Azure Web App (Closed Network) ==="
+          echo "=== Deploying to Azure Web App via Storage Account ==="
           
           # ZIPファイルのサイズを確認
           ZIP_SIZE=$(stat -c%s webapp.zip 2>/dev/null || stat -f%z webapp.zip 2>/dev/null || echo "unknown")
           echo "ZIP file size: $ZIP_SIZE bytes"
           
-          # Web AppのリソースIDを取得
-          WEBAPP_RESOURCE_ID=$(az webapp show \
+          # Storage Accountの名前を取得（既存のものを使用）
+          STORAGE_ACCOUNT=$(az storage account list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${{ env.WEBAPP_NAME }} \
-            --query id -o tsv)
+            --query "[0].name" -o tsv)
           
-          echo "Web App Resource ID: $WEBAPP_RESOURCE_ID"
+          echo "Using Storage Account: $STORAGE_ACCOUNT"
           
-          # 先にWeb Appを停止
+          # コンテナを作成（既存の場合はスキップ）
+          az storage container create \
+            --name deployments \
+            --account-name $STORAGE_ACCOUNT \
+            --auth-mode login || true
+          
+          # ZIPファイルをBlobにアップロード
+          BLOB_NAME="webapp-$(date +%s).zip"
+          echo "Uploading to blob: $BLOB_NAME"
+          
+          az storage blob upload \
+            --account-name $STORAGE_ACCOUNT \
+            --container-name deployments \
+            --name $BLOB_NAME \
+            --file webapp.zip \
+            --auth-mode login \
+            --overwrite
+          
+          # SAS URLを生成（24時間有効）
+          EXPIRY=$(date -u -d '1 day' '+%Y-%m-%dT%H:%MZ' 2>/dev/null || date -u -v+1d '+%Y-%m-%dT%H:%MZ')
+          
+          PACKAGE_URL=$(az storage blob generate-sas \
+            --account-name $STORAGE_ACCOUNT \
+            --container-name deployments \
+            --name $BLOB_NAME \
+            --permissions r \
+            --expiry $EXPIRY \
+            --auth-mode login \
+            --as-user \
+            --full-uri \
+            -o tsv)
+          
+          echo "Package URL generated"
+          
+          # Web Appを停止
           echo "Stopping Web App..."
           az webapp stop \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -278,50 +311,12 @@ jobs:
           
           sleep 5
           
-          # アクセストークン取得
-          ACCESS_TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
-          
-          # ZIPファイルをBase64エンコード
-          echo "Encoding ZIP file..."
-          ZIP_BASE64=$(base64 -w 0 webapp.zip)
-          
-          # ARM API経由でデプロイ（OneDeploy API）
-          DEPLOY_URL="https://management.azure.com${WEBAPP_RESOURCE_ID}/extensions/onedeploy?api-version=2022-03-01"
-          
-          echo "Deploying via ARM API..."
-          echo "Deploy URL: $DEPLOY_URL"
-          
-          # JSON bodyを作成
-          echo "{\"properties\":{\"type\":\"zip\",\"packageUri\":\"data:application/zip;base64,${ZIP_BASE64}\"}}" > deploy-payload.json
-          
-          # デプロイ実行
-          DEPLOY_RESPONSE=$(curl -X PUT \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d @deploy-payload.json \
-            "${DEPLOY_URL}" \
-            --write-out "\nHTTP_STATUS:%{http_code}" \
-            --max-time 300 \
-            -s)
-          
-          HTTP_STATUS=$(echo "$DEPLOY_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-          
-          echo "HTTP Status: $HTTP_STATUS"
-          
-          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ] || [ "$HTTP_STATUS" -eq 202 ]; then
-            echo "✅ Deployment initiated successfully"
-          else
-            echo "❌ Deployment failed with HTTP status: $HTTP_STATUS"
-            echo "Response: $DEPLOY_RESPONSE"
-            exit 1
-          fi
-          
-          # クリーンアップ
-          rm -f deploy-payload.json
-          
-          # デプロイ完了を待機
-          echo "Waiting for deployment to complete..."
-          sleep 20
+          # WEBSITE_RUN_FROM_PACKAGEにSAS URLを設定
+          echo "Setting WEBSITE_RUN_FROM_PACKAGE..."
+          az webapp config appsettings set \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PACKAGE_URL"
           
           # Web Appを起動
           echo "Starting Web App..."
@@ -341,7 +336,7 @@ jobs:
             --query "{name:name, state:state, defaultHostName:defaultHostName}" \
             -o json
           
-          echo "✅ Deployment completed"
+          echo "✅ Deployment completed using Run-From-Package"
 
   cleanup:
     needs: [setup-runner, build-and-deploy]
