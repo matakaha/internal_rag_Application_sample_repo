@@ -191,6 +191,13 @@ jobs:
               AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
               WEBSITE_NODE_DEFAULT_VERSION="~18"
           
+          # 起動コマンドを設定
+          echo "Setting startup command..."
+          az webapp config set \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }} \
+            --startup-file "npm start"
+          
           echo "✅ Web App settings configured"
 
       - name: Install dependencies
@@ -255,7 +262,15 @@ jobs:
           ZIP_SIZE=$(stat -c%s webapp.zip 2>/dev/null || stat -f%z webapp.zip 2>/dev/null || echo "unknown")
           echo "ZIP file size: $ZIP_SIZE bytes"
           
-          # Azure CLIでデプロイ（ARM API経由で動作するため閉域でもOK）
+          # 先にWeb Appを停止（デプロイ中の競合を防ぐ）
+          echo "Stopping Web App to ensure clean deployment..."
+          az webapp stop \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }}
+          
+          sleep 5
+          
+          # Azure CLIでデプロイ（再起動なし）
           echo "Deploying using 'az webapp deploy'..."
           az webapp deploy \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -263,14 +278,23 @@ jobs:
             --src-path webapp.zip \
             --type zip \
             --clean true \
-            --restart true \
-            --timeout 600
+            --restart false \
+            --async false
           
-          echo "✅ Deployment completed"
+          echo "✅ Deployment package uploaded"
           
-          # デプロイ後に待機
+          # デプロイ完了を待機
+          sleep 10
+          
+          # Web Appを起動
+          echo "Starting Web App..."
+          az webapp start \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.WEBAPP_NAME }}
+          
+          # 起動を待機
           echo "Waiting for application to start..."
-          sleep 20
+          sleep 30
           
           # Web Appの状態を確認
           echo "Checking Web App status..."
@@ -279,6 +303,24 @@ jobs:
             --name ${{ env.WEBAPP_NAME }} \
             --query "{name:name, state:state, defaultHostName:defaultHostName}" \
             -o json
+          
+          # ヘルスチェック
+          echo ""
+          echo "=== Health Check ==="
+          HEALTH_URL="https://${{ env.WEBAPP_NAME }}.azurewebsites.net/health"
+          echo "Checking: $HEALTH_URL"
+          
+          for i in {1..10}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            echo "Attempt $i: HTTP $HTTP_STATUS"
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Application is healthy!"
+              break
+            fi
+            
+            sleep 10
+          done
           
           echo "✅ Deployment verification completed"
 
