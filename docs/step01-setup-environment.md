@@ -754,7 +754,41 @@ $ACR_NAME = az acr list --resource-group $RESOURCE_GROUP --query "[0].name" -o t
 Write-Host "ACR Name: $ACR_NAME" -ForegroundColor Green
 ```
 
-**2. イメージのビルド**
+**2. 必要なベースイメージのインポート (完全閉域環境)**
+
+> 📝 **完全閉域環境でのベースイメージ管理**
+> 
+> 完全閉域環境では、DockerHubなどの外部レジストリにアクセスできないため、必要なベースイメージを事前にACRにインポートする必要があります。
+> 
+> **インポートが必要なイメージ**:
+> - `node:18-alpine`: Web Appフロントエンド用
+> - `myoung34/github-runner:latest`: GitHub Runner基盤 (Dockerfile.runnerで使用)
+> 
+> `az acr import` コマンドは、Azure側でイメージをプルしてACRに格納するため、ローカル環境にDockerがインストールされていなくても実行可能です。
+
+```powershell
+# Node.js Alpine イメージをインポート (Web App用)
+Write-Host "Importing node:18-alpine..." -ForegroundColor Yellow
+az acr import `
+  --name $ACR_NAME `
+  --source docker.io/library/node:18-alpine `
+  --image node:18-alpine
+
+# GitHub Runner ベースイメージをインポート
+Write-Host "Importing GitHub Runner base image..." -ForegroundColor Yellow
+az acr import `
+  --name $ACR_NAME `
+  --source docker.io/myoung34/github-runner:latest `
+  --image myoung34/github-runner:latest
+
+# インポート完了確認
+Write-Host "`n✓ Base images imported successfully" -ForegroundColor Green
+az acr repository list --name $ACR_NAME --output table
+```
+
+> 💡 **ヒント**: インポートは一度実行すれば、イメージはACRに永続化されます。再実行の必要はありません。
+
+**3. GitHub Runnerイメージのビルド**
 
 > ⚠️ **Private Endpoint構成のACRでのビルドエラー**
 > 

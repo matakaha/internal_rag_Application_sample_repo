@@ -113,24 +113,56 @@ jobs:
             --cpu 2 \
             --memory 4 \
             --restart-policy Never \
+            --secure-environment-variables \
+              RUNNER_TOKEN=$RUNNER_TOKEN \
+              GITHUB_TOKEN=${{ secrets.GH_PAT }} \
             --environment-variables \
               GITHUB_REPOSITORY=${{ github.repository }} \
               RUNNER_REPOSITORY_URL=https://github.com/${{ github.repository }} \
               RUNNER_NAME=$RUNNER_NAME \
-              RUNNER_TOKEN=$RUNNER_TOKEN \
               RUNNER_LABELS=self-hosted,azure,vnet \
-              RUNNER_WORK_DIRECTORY=_work \
-              GITHUB_TOKEN=${{ secrets.GH_PAT }}
+              RUNNER_WORK_DIRECTORY=_work
           
-          # ACIが起動するまで少し待機
-          sleep 15
+          echo "Container created. Checking initial status..."
+          
+          # 初期状態を確認
+          sleep 10
+          az container show \
+            --resource-group $RESOURCE_GROUP \
+            --name $CONTAINER_GROUP_NAME \
+            --query "{state:instanceView.state, containers:containers[0].instanceView.currentState}" \
+            -o json
 
-          # Runnerが登録されるまで待機
+          # Runnerが登録されるまで待機（デバッグ情報付き）
           echo "Waiting for runner to register with GitHub..."
-          MAX_WAIT=300  # 最大5分待機
+          MAX_WAIT=300
           ELAPSED=0
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
+            # コンテナの状態を確認
+            CONTAINER_STATE=$(az container show \
+              --resource-group $RESOURCE_GROUP \
+              --name $CONTAINER_GROUP_NAME \
+              --query "instanceView.state" -o tsv 2>/dev/null || echo "Unknown")
+            
+            # コンテナが失敗した場合、ログを出力して終了
+            if [ "$CONTAINER_STATE" = "Failed" ] || [ "$CONTAINER_STATE" = "Terminated" ]; then
+              echo "❌ Container is in $CONTAINER_STATE state!"
+              echo "Container logs:"
+              az container logs \
+                --resource-group $RESOURCE_GROUP \
+                --name $CONTAINER_GROUP_NAME || echo "Unable to retrieve logs"
+              
+              echo "Container events:"
+              az container show \
+                --resource-group $RESOURCE_GROUP \
+                --name $CONTAINER_GROUP_NAME \
+                --query "containers[0].instanceView.events[]" -o table
+              
+              exit 1
+            fi
+            
+            # Runnerのステータス確認
             RUNNER_STATUS=$(curl -s \
               -H "Authorization: token ${{ secrets.GH_PAT }}" \
               -H "Accept: application/vnd.github+json" \
@@ -138,17 +170,21 @@ jobs:
               | jq -r ".runners[] | select(.name==\"$RUNNER_NAME\") | .status")
             
             if [ "$RUNNER_STATUS" = "online" ]; then
-              echo "Runner is online and ready!"
+              echo "✅ Runner is online and ready!"
               break
             fi
             
-            echo "Runner status: ${RUNNER_STATUS:-not found}. Waiting... ($ELAPSED/$MAX_WAIT seconds)"
+            echo "Container: $CONTAINER_STATE | Runner: ${RUNNER_STATUS:-not found} | Waiting... ($ELAPSED/$MAX_WAIT seconds)"
             sleep 10
             ELAPSED=$((ELAPSED + 10))
           done
           
           if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "Error: Runner did not come online within $MAX_WAIT seconds"
+            echo "❌ Error: Runner did not come online within $MAX_WAIT seconds"
+            echo "Final container logs:"
+            az container logs \
+              --resource-group $RESOURCE_GROUP \
+              --name $CONTAINER_GROUP_NAME || echo "Unable to retrieve logs"
             exit 1
           fi
 
