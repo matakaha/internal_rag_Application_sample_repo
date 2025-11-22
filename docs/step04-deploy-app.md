@@ -254,7 +254,88 @@ Write-Host "Tenant ID: $tenantId"
 Write-Host "Subscription ID: $subscriptionId"
 ```
 
-#### 2.7. GitHub Secretsの確認
+#### 2.7. Web App用のACR Pull権限設定
+
+Web AppがACRからコンテナイメージをPullできるように、Managed Identity認証を設定します。
+
+```powershell
+# Web AppのSystem Assigned Managed Identityを有効化
+az webapp identity assign `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME
+
+# Principal IDを取得
+$WEBAPP_PRINCIPAL_ID = az webapp identity show `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME `
+    --query principalId -o tsv
+
+# ACRへのAcrPull権限を付与
+$ACR_NAME = "acrinternalragdev"
+$ACR_ID = az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query id -o tsv
+
+az role assignment create `
+    --assignee $WEBAPP_PRINCIPAL_ID `
+    --role AcrPull `
+    --scope $ACR_ID
+
+# Web AppでACRからのイメージPull時にManaged Identity認証を有効化
+az webapp config set `
+    --resource-group $RESOURCE_GROUP `
+    --name $WEBAPP_NAME `
+    --generic-configurations '{\"acrUseManagedIdentityCreds\":\"true\"}'
+
+Write-Host "✅ Web App ACR Pull permission configured successfully"
+```
+
+**重要**: この設定により、Web AppはManaged Identityを使用してACRからプライベートにコンテナイメージをPullできます。ACRの認証情報をWeb Appに設定する必要はありません。
+
+#### 2.8. NAT GatewayとACRファイアウォール設定
+
+Self-hosted RunnerからACRへのアクセスを許可するため、NAT GatewayのIPをACRファイアウォールに追加します。
+
+```powershell
+# NAT Gatewayの情報を取得
+$NAT_GATEWAY_NAME = "natgw-dev"
+$NAT_PUBLIC_IP_ID = az network nat gateway show `
+    --resource-group $RESOURCE_GROUP `
+    --name $NAT_GATEWAY_NAME `
+    --query "publicIpAddresses[0].id" -o tsv
+
+# NAT GatewayのパブリックIPアドレスを取得
+$NAT_IP = az network public-ip show `
+    --ids $NAT_PUBLIC_IP_ID `
+    --query ipAddress -o tsv
+
+Write-Host "NAT Gateway Public IP: $NAT_IP"
+
+# NAT GatewayをContainer Instancesサブネットに関連付け
+az network vnet subnet update `
+    --resource-group $RESOURCE_GROUP `
+    --vnet-name $VNET_NAME `
+    --name $SUBNET_NAME `
+    --nat-gateway $NAT_GATEWAY_NAME
+
+# ACRのファイアウォールルールにNAT Gateway IPを追加
+az acr network-rule add `
+    --name $ACR_NAME `
+    --resource-group $RESOURCE_GROUP `
+    --ip-address $NAT_IP
+
+Write-Host "✅ NAT Gateway IP added to ACR firewall rules"
+
+# 設定確認
+az acr network-rule list `
+    --name $ACR_NAME `
+    --resource-group $RESOURCE_GROUP
+```
+
+**ポイント**:
+- NAT GatewayをContainer Instancesサブネットに関連付けることで、ACIからの全てのアウトバウンド通信がNAT Gateway経由になります
+- NAT GatewayのパブリックIPをACRファイアウォールに許可することで、Self-hosted RunnerからACR Buildが実行できます
+- この設定により、ACRは閉域を維持したまま(Private Endpoint使用)、必要最小限のIPアドレスのみを許可します
+
+#### 2.9. GitHub Secretsの確認
 
 以下のSecretsが設定されているか確認します:
 
