@@ -1,59 +1,41 @@
 #!/bin/bash
 set -e
 
-# DockerチE�EモンをバチE��グラウンドで起勁E
-echo "=== Starting Docker Daemon ==="
-dockerd > /var/log/dockerd.log 2>&1 &
-
-# DockerチE�Eモンが起動するまで征E��E
-echo "Waiting for Docker daemon to start..."
-for i in {1..30}; do
-    if docker info > /dev/null 2>&1; then
-        echo "✁EDocker daemon is running"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "❁EDocker daemon failed to start"
-        cat /var/log/dockerd.log
-        exit 1
-    fi
-    sleep 1
-done
-
-# チE��チE��惁E��
+# 起動情報を表示
 echo "=== GitHub Runner Startup ==="
 echo "Runner Name: ${RUNNER_NAME:-runner-$(hostname)}"
 echo "Repository URL: ${RUNNER_REPOSITORY_URL}"
 echo "Work Directory: ${RUNNER_WORK_DIRECTORY:-_work}"
 echo "Labels: ${RUNNER_LABELS:-self-hosted}"
 
-# ネットワーク接続テスチE
+# ネットワーク接続テスト
 echo "=== Network Connectivity Test ==="
 if curl -s --max-time 10 -o /dev/null -w "%{http_code}" https://github.com | grep -q "200\|301\|302"; then
-    echo "✁EGitHub.com is reachable"
+    echo "✅ GitHub.com is reachable"
 else
-    echo "❁ECannot reach GitHub.com"
+    echo "❌ Cannot reach GitHub.com"
     echo "Testing DNS resolution..."
     nslookup github.com || echo "DNS resolution failed"
     exit 1
 fi
 
-# 忁E��環墁E��数チェチE��
+# 必須環境変数チェック
 if [ -z "$RUNNER_TOKEN" ] || [ -z "$RUNNER_REPOSITORY_URL" ]; then
-    echo "❁EError: RUNNER_TOKEN and RUNNER_REPOSITORY_URL must be set"
+    echo "❌ Error: RUNNER_TOKEN and RUNNER_REPOSITORY_URL must be set"
     exit 1
 fi
 
 echo "=== Configuring GitHub Runner ==="
-# runnerユーザーとして実衁E
-su - runner -c "cd /actions-runner && ./config.sh \
-    --url \"${RUNNER_REPOSITORY_URL}\" \
-    --token \"${RUNNER_TOKEN}\" \
-    --name \"${RUNNER_NAME:-runner-$(hostname)}\" \
-    --work \"${RUNNER_WORK_DIRECTORY:-_work}\" \
-    --labels \"${RUNNER_LABELS:-self-hosted}\" \
+# runnerユーザーとして設定
+cd /actions-runner
+./config.sh \
+    --url "${RUNNER_REPOSITORY_URL}" \
+    --token "${RUNNER_TOKEN}" \
+    --name "${RUNNER_NAME:-runner-$(hostname)}" \
+    --work "${RUNNER_WORK_DIRECTORY:-_work}" \
+    --labels "${RUNNER_LABELS:-self-hosted}" \
     --unattended \
-    --replace"
+    --replace
 
 echo "=== Starting GitHub Runner ==="
-su - runner -c "cd /actions-runner && ./run.sh"
+./run.sh

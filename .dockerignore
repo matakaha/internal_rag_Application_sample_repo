@@ -34,11 +34,6 @@ scripts/
 startup.sh
 check_encoding.py
 
-# Web App関連 (Runner には不要)
-src/
-Dockerfile
-.dockerignore
-
 # 開発用ファイル
 .vscode/
 .env
