@@ -55,7 +55,8 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L \
 
 # 起動スクリプトをコピー
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+# Windows環境でのCRLF改行をLFに変換 (sed -i 's/\r$//' で \r を削除)
+RUN sed -i 's/\r$//' /start.sh && chmod +x /start.sh
 
 # Docker socket用のディレクトリを作成
 RUN mkdir -p /var/run
