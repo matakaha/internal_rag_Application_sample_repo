@@ -210,29 +210,23 @@ jobs:
       - name: Build and Push Docker Image to ACR
         id: docker-build
         run: |
-          echo "=== Building Docker Image ==="
+          echo "=== Building Docker Image using ACR Build ==="
           
           ACR_NAME="acrinternalragdev"
           IMAGE_NAME="webapp-frontend"
           IMAGE_TAG="$(date +%s)"
-          FULL_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
-          LATEST_IMAGE_NAME="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest"
           
-          echo "Building image: $FULL_IMAGE_NAME"
+          echo "Building image: ${IMAGE_NAME}:${IMAGE_TAG}"
           
-          # Dockerイメージをビルド
-          docker build -t $FULL_IMAGE_NAME -t $LATEST_IMAGE_NAME .
+          # ACR上でビルド&プッシュ (ローカルDocker不要)
+          az acr build \
+            --registry $ACR_NAME \
+            --image ${IMAGE_NAME}:${IMAGE_TAG} \
+            --image ${IMAGE_NAME}:latest \
+            --file Dockerfile \
+            .
           
-          # ACRにログイン（Azure CLI認証を使用）
-          echo "Logging in to ACR..."
-          az acr login --name $ACR_NAME
-          
-          # ACRにプッシュ
-          echo "Pushing image to ACR..."
-          docker push $FULL_IMAGE_NAME
-          docker push $LATEST_IMAGE_NAME
-          
-          echo "✅ Image pushed successfully"
+          echo "✅ Image built and pushed successfully"
           echo "image-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
