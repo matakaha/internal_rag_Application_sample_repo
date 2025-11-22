@@ -5,7 +5,7 @@
 
 const express = require('express');
 const path = require('path');
-const { DefaultAzureCredential } = require('@azure/identity');
+const { DefaultAzureCredential, ManagedIdentityCredential } = require('@azure/identity');
 const { AzureOpenAI } = require('openai');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
@@ -24,7 +24,10 @@ const AZURE_SEARCH_INDEX = process.env.AZURE_SEARCH_INDEX || 'redlist-index';
 const AZURE_SEARCH_KEY = process.env.AZURE_SEARCH_KEY;
 
 // Azure認証情報
-const credential = new DefaultAzureCredential();
+// App Service環境ではManagedIdentityCredentialを優先使用
+const credential = process.env.WEBSITE_INSTANCE_ID 
+    ? new ManagedIdentityCredential() 
+    : new DefaultAzureCredential();
 
 // Azure OpenAI クライアント初期化
 let openaiClient;
