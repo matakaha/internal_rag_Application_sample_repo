@@ -27,9 +27,13 @@ def test_azure_openai():
         # ローカル開発ではAzure CLI認証、本番ではManaged Identity
         credential = AzureCliCredential()
         
+        # トークン取得用の関数
+        def get_token():
+            return credential.get_token("https://cognitiveservices.azure.com/.default").token
+        
         client = AzureOpenAI(
             azure_endpoint=endpoint,
-            azure_ad_token_provider=lambda: credential.get_token("https://cognitiveservices.azure.com/.default").token,
+            azure_ad_token_provider=get_token,
             api_version="2024-02-01"
         )
         
@@ -48,6 +52,8 @@ def test_azure_openai():
         
     except Exception as e:
         print(f"❌ Azure OpenAI connection failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -75,31 +81,44 @@ def test_azure_search():
             credential = AzureCliCredential()
             print("Using Managed Identity authentication")
         
-        client = SearchClient(
+        # 認証のテストのみ(インデックスが存在しない場合もあるため)
+        # SearchServiceClientを使用してサービスレベルの接続を確認
+        from azure.search.documents.indexes import SearchIndexClient
+        
+        index_client = SearchIndexClient(
             endpoint=endpoint,
-            index_name=index_name,
             credential=credential
         )
         
-        # インデックス統計を取得
-        # Note: この操作には適切な権限が必要
-        results = client.search(
-            search_text="test",
-            top=1
-        )
-        
-        # 結果を消費して接続を確認
-        result_count = 0
-        for _ in results:
-            result_count += 1
-            break
-        
-        print("✅ Azure AI Search connection successful!")
-        return True
+        # インデックス一覧を取得して接続と認証を確認
+        try:
+            index_names = [idx.name for idx in index_client.list_indexes()]
+            print(f"✅ Azure AI Search connection successful!")
+            
+            if index_name in index_names:
+                print(f"✅ Index '{index_name}' exists")
+            else:
+                print(f"ℹ️  Index '{index_name}' does not exist yet (will be created in Step 03)")
+                if index_names:
+                    print(f"   Existing indexes: {', '.join(index_names)}")
+            
+            return True
+        except Exception as list_error:
+            # インデックス一覧の取得に失敗した場合でも、エラー内容を確認
+            error_msg = str(list_error)
+            if "Forbidden" in error_msg or "403" in error_msg:
+                print(f"❌ Authentication successful but insufficient permissions: {list_error}")
+                print("   Required role: 'Search Service Contributor' or 'Search Index Data Reader'")
+                return False
+            else:
+                # その他のエラーの場合
+                raise
         
     except Exception as e:
         print(f"❌ Azure AI Search connection failed: {e}")
-        print("\nNote: Ensure the index exists and you have proper permissions")
+        print("\nNote: Ensure you have proper permissions to access the search service")
+        import traceback
+        traceback.print_exc()
         return False
 
 

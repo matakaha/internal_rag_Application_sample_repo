@@ -301,19 +301,6 @@ env:
 
 ### 4. コードの準備とプッシュ
 
-#### Web App用の設定(.deployment)
-
-Node.js Web Appのデプロイ時に、Azure側でのビルドを無効化する設定ファイルを作成します。
-
-`src/.deployment`ファイルを作成:
-
-```ini
-[config]
-SCM_DO_BUILD_DURING_DEPLOYMENT=false
-```
-
-> 📝 **Note**: この設定により、Self-hosted Runner上でビルドした`node_modules`をそのままデプロイできます。閉域ネットワーク環境では必須の設定です。
-
 #### ローカルでテスト(オプション)
 
 ```powershell
@@ -858,61 +845,6 @@ function-app.zip
             ├── flask/
             └── ...(その他のパッケージ)
 ```
-
-### Web App(.deployment)設定の詳細
-
-#### SCM_DO_BUILD_DURING_DEPLOYMENTとは
-
-Azure App Serviceには「Kudu」というデプロイエンジンがあり、デフォルトでは以下の動作をします:
-
-1. ZIPファイルを受信
-2. `package.json`を検出
-3. `npm install`を自動実行
-4. アプリケーションを起動
-
-#### 閉域環境での問題
-
-ステップ3の`npm install`は、npmレジストリ(`registry.npmjs.org`)にインターネット経由でアクセスします。閉域環境では:
-
-- ❌ npmレジストリにアクセスできない
-- ❌ ビルドが失敗する
-- ❌ デプロイが完了しない
-
-#### 解決策: ビルドの無効化
-
-`.deployment`ファイルで、Azure側のビルドを無効化します:
-
-```ini
-[config]
-SCM_DO_BUILD_DURING_DEPLOYMENT=false
-```
-
-**結果**:
-- ✅ Azure側は受け取ったファイルをそのままデプロイ
-- ✅ Self-hosted Runnerで事前にビルドした`node_modules`を使用
-- ✅ インターネットアクセス不要
-
-#### ワークフローでの対応
-
-Web Appのワークフローでは、以下のようにビルドとパッケージングを行います:
-
-```yaml
-- name: Build application
-  run: |
-    cd src
-    npm ci  # Self-hosted Runner上でインストール
-    
-- name: Package for deployment
-  run: |
-    cd src
-    zip -r ../webapp.zip . -x "*.git*" -x "*node_modules/.cache/*"
-    # node_modulesも含めてZIP化
-```
-
-**ポイント**:
-- `npm ci`はSelf-hosted Runner上で実行(npmレジストリアクセス可能)
-- `node_modules`をZIPに含める
-- Azure側ではビルドせずそのままデプロイ
 
 ### まとめ: なぜこれらの工夫が必要か
 

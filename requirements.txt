@@ -7,7 +7,11 @@ azure-search-documents==11.4.0
 azure-core==1.29.6
 
 # OpenAI (非同期対応版)
-openai==1.12.0
+openai==1.52.0
+
+# HTTP client (openai との互換性のため特定バージョンを指定)
+httpx<0.28
+httpcore<1
 
 # Data processing
 pandas==2.2.3

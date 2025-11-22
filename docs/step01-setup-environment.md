@@ -316,6 +316,11 @@ az role assignment create `
     --role "Search Index Data Reader" `
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Search/searchServices/$AZURE_SEARCH_SERVICE_NAME"
 
+az role assignment create `
+    --assignee $USER_OBJECT_ID `
+    --role "Search Service Contributor" `
+    --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Search/searchServices/$AZURE_SEARCH_SERVICE_NAME"
+
 # Storage Accountへのアクセス権限を付与
 Write-Host "Granting Storage Account access..." -ForegroundColor Yellow
 az role assignment create `
@@ -328,7 +333,12 @@ Write-Host "✓ Local user permissions granted" -ForegroundColor Green
 
 > 📝 **Note**: ローカル開発では `az login` で認証した資格情報が使用されます。Azure Functions上では Managed Identity が使用されます。
 
-### 4. Azure接続テスト
+> ⚠️ **Managed Identity 権限の反映について**:
+> - ロール割り当て後、権限が反映されるまで **1〜5分程度** かかる場合があります
+> - この間、接続テストで `Forbidden (403)` エラーが発生する可能性があります
+> - 権限反映を待っている間は、一時的に **API キー認証** を使用できます(後述)
+
+### 6. Azure接続テスト
 
 Managed Identityを使用してAzureリソースへの接続をテストします。
 
@@ -359,10 +369,90 @@ Managed Identityを使用してAzureリソースへの接続をテストしま�
 python scripts/test-azure-connection.py
 ```
 
+#### 期待される出力
+
+**成功時 (Azure OpenAI)**:
+```
+=== Testing Azure OpenAI Connection ===
+Endpoint: https://aoai-internal-rag-dev.openai.azure.com/
+Deployment: gpt-4o-mini
+✅ Azure OpenAI connection successful!
+Response: Hello! How can I assist you today?
+```
+
+**成功時 (AI Search - Step 3 でインデックス作成前)**:
+```
+=== Testing Azure AI Search Connection ===
+Endpoint: https://srch-internal-rag-dev.search.windows.net
+Index: redlist-index
+Using Managed Identity authentication
+✅ Azure AI Search connection successful!
+ℹ️  Index 'redlist-index' does not exist yet (will be created in Step 03)
+```
+
+**成功時 (AI Search - インデックス作成後)**:
+```
+=== Testing Azure AI Search Connection ===
+Endpoint: https://srch-internal-rag-dev.search.windows.net
+Index: redlist-index
+Using Managed Identity authentication
+✅ Azure AI Search connection successful!
+✅ Index 'redlist-index' exists
+```
+
+#### トラブルシューティング
+
+##### Managed Identity 権限エラー (403 Forbidden)
+
+**症状**: 
+```
+❌ Authentication successful but insufficient permissions: Operation returned an invalid status 'Forbidden'
+   Required role: 'Search Service Contributor' or 'Search Index Data Reader'
+```
+
+**原因**: 
+- ロール割り当て直後で、権限がまだ反映されていない(1〜5分かかる場合があります)
+
+**対処法 1: 権限の反映を待つ**
+```powershell
+# 数分待ってから再実行
+Start-Sleep -Seconds 120
+python scripts/test-azure-connection.py
+```
+
+**対処法 2: API キー認証を一時的に使用**
+
+権限が反映されるまでの間、API キーを使用して接続テストを行うことができます:
+
+```powershell
+# AI Search の API キーを取得
+$searchKey = az search admin-key show `
+    --service-name srch-internal-rag-dev `
+    --resource-group rg-internal-rag-dev `
+    --query primaryKey -o tsv
+
+# .env ファイルに一時的に追加
+Add-Content .env "`n# Temporary API Key for testing (remove after Managed Identity is active)"
+Add-Content .env "AZURE_SEARCH_KEY=$searchKey"
+
+# テストを再実行
+python scripts/test-azure-connection.py
+```
+
+> 💡 **重要**: API キーは一時的なテスト用です。本番環境では必ず Managed Identity を使用してください。
+> 
+> Managed Identity の権限が反映されたら、`.env` ファイルから `AZURE_SEARCH_KEY` の行を削除することを推奨します:
+> ```powershell
+> # API キーの行を削除
+> (Get-Content .env) | Where-Object { $_ -notmatch "AZURE_SEARCH_KEY" } | Set-Content .env
+> ```
+
+##### Private Endpoint による接続制限
+
 > ⚠️ **Private Endpoint環境での制限**: 
 > - **VPN接続なし**: Azure AI SearchやAzure OpenAIがPrivate Endpointのみでアクセス可能に構成されている場合、ローカル環境からの接続テストは失敗します
 > - **VPN接続あり**: vNetに接続できる場合、Azure OpenAIは接続可能ですが、AI SearchはPrivate DNS解決の設定により失敗する可能性があります
-> - **AI Searchインデックス未作成**: Step 3でインデックスを作成するまで、AI Search接続テストは失敗します(正常動作)
+> - **AI Searchインデックス未作成**: Step 3でインデックスを作成するまで、AI Searchは存在しないインデックスへのアクセスとなります(正常動作)
 > 
 > 💡 **初学者向け: Private Endpointとは？**
 > 
@@ -385,28 +475,11 @@ python scripts/test-azure-connection.py
 > このプロジェクトでは、すべてのAzureリソースがPrivate Endpointで保護されており、
 > Azure FunctionsやApp ServiceはvNet内に統合されているため、安全にアクセスできます。
 
-期待される出力 (Azure OpenAI):
-```
-=== Testing Azure OpenAI Connection ===
-Endpoint: https://aoai-internal-rag-dev.openai.azure.com/
-Deployment: gpt-4o-mini
-✅ Azure OpenAI connection successful!
-Response: Hello! How can I assist you today?
-```
-
-期待される出力 (AI Search - インデックス作成後):
-```
-=== Testing Azure AI Search Connection ===
-Endpoint: https://srch-internal-rag-dev.search.windows.net
-Index: redlist-index
-✅ Azure AI Search connection successful!
-```
-
 **Private Endpoint環境の場合**:
 - Azure AI Search: `publicNetworkAccess` が `Disabled` の場合、VPN接続またはAzure Functions経由でのみアクセス可能
 - この構成はセキュリティ上推奨される設定です
 - Azure FunctionsはvNet統合されているため、デプロイ後は正常に動作します
-- - AI Searchの完全な動作確認はStep 3 (インデックス作成後) またはAzure Functionsデプロイ後に行います
+- AI Searchの完全な動作確認はStep 3 (インデックス作成後) またはAzure Functionsデプロイ後に行います
 
 ### 7. GitHub Secretsの設定
 
@@ -620,6 +693,271 @@ Write-Host "`nAI Search ロール割り当て:" -ForegroundColor Cyan
 az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
 ```
 
+### 10. GitHub Runnerイメージの作成・更新
+
+このプロジェクトでは、GitHub ActionsでセルフホストランナーをAzure Container Instancesで動的に実行します。ランナー用のカスタムDockerイメージをAzure Container Registry (ACR) にビルド・保存する必要があります。
+
+#### 対象ファイル
+
+- `Dockerfile.runner`: GitHub Runnerのコンテナイメージ定義
+- `start.sh`: ランナー起動スクリプト(ネットワーク診断・デバッグログ含む)
+
+#### 初回ビルド vs 再ビルド
+
+| タイミング | 手順 | 説明 |
+|-----------|------|------|
+| **初回セットアップ時** | このドキュメントの手順に従う | Docker なしの基本 Runner イメージ |
+| **Docker 追加後** | [rebuild-runner-image.md](rebuild-runner-image.md) を参照 | Web App コンテナビルド用に Docker を追加 |
+
+> **Note**: Web App をコンテナ化してデプロイする場合は、Runner に Docker をインストールする必要があります。詳細は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
+
+#### ACRビルドが必要なケース
+
+以下の場合、ACRで新しいイメージをビルドする必要があります:
+
+| シナリオ | ACRビルド必要 | 理由 |
+|---------|-------------|------|
+| `Dockerfile.runner`を修正 | ✅ 必要 | イメージの構成変更 |
+| `start.sh`を修正 | ✅ 必要 | 起動スクリプトがイメージに含まれる |
+| ベースイメージの更新 | ✅ 推奨 | セキュリティパッチ適用のため |
+| GitHub Runner バージョンアップ | ✅ 推奨 | 最新機能・修正を反映 |
+| ワークフローファイルのみ修正 | ❌ 不要 | イメージは変更なし |
+| 環境変数のみ変更 | ❌ 不要 | ランタイムで設定される |
+
+#### 初回ビルド手順
+
+> **Note**: 初回セットアップ時は以下のコマンドを使用してください。Docker を追加した再ビルドの場合は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
+
+> 📝 **NAT Gateway によるセキュアなビルド環境**:
+> 
+> この環境では、ACR は Private Endpoint のみでアクセス可能に構成されており、パブリックアクセスは無効化されています。
+> ACR Tasks でのビルドは、vNet 内のビルドエージェントから実行され、以下の経路で通信します:
+> - **ACR へのアクセス**: Private Endpoint 経由 (vNet 内部通信)
+> - **インターネットへのアクセス**: NAT Gateway 経由 (ベースイメージのダウンロードなど)
+> 
+> この構成により、ACR へのアクセスを閉域網内に限定しつつ、必要なインターネットリソースへのアクセスが可能になります。
+
+**1. ACR 名の取得**
+
+```powershell
+# .envファイルから環境変数を読み込む(まだの場合)
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^([^#][^=]+)=(.*)$') {
+        $name = $matches[1].Trim()
+        $value = $matches[2].Trim()
+        Set-Variable -Name $name -Value $value -Scope Script
+    }
+}
+
+# ACR名を取得(リソースグループ内のACRを検索)
+$ACR_NAME = az acr list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv
+Write-Host "ACR Name: $ACR_NAME" -ForegroundColor Green
+```
+
+**2. イメージのビルド**
+
+> ⚠️ **Private Endpoint構成のACRでのビルドエラー**
+> 
+> ACRがPrivate Endpointのみで構成されている場合、`az acr build`コマンドは以下のエラーで失敗します:
+> 
+> ```
+> failed to login: failed to set docker credentials: Error response from daemon: 
+> Get "https://acrinternalragdev.azurecr.io/v2/": denied: 
+> client with IP 'x.x.x.x' is not allowed access.
+> ```
+> 
+> **原因**: ACR Tasksのビルドエージェントは、デフォルトでAzure管理のパブリックIP環境で実行されるため、Private EndpointのみのACRにアクセスできません。
+> 
+> **解決策は2つあります**:
+
+<details>
+<summary><b>解決策1: vNet統合ビルドエージェントを使用 (完全閉域・推奨)ですが、東日本リージョンでは利用できません（解決策2にて検証ください）</b></summary>
+
+vNet内にビルドエージェント専用のAgent Poolを作成し、Private Endpoint経由でACRにアクセスします。
+
+**メリット**:
+- ✅ 完全閉域でセキュア
+- ✅ Private Endpointのみでビルド可能
+
+**デメリット**:
+- ❌ 追加コスト: $144/月 (S1常時稼働) または $0.20/時間 (オンデマンド)
+- ❌ Agent Pool作成に3〜5分の待ち時間
+- ❌ 運用が複雑
+
+**手順**:
+
+```powershell
+# Step 1: サブネットIDを取得
+$SUBNET_ID = az network vnet subnet show `
+  --resource-group rg-internal-rag-dev `
+  --vnet-name vnet-internal-rag-dev `
+  --name snet-compute `
+  --query id -o tsv
+
+# Step 2: vNet統合Agent Poolを作成
+az acr agentpool create `
+  --registry $ACR_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --name vnetpool `
+  --tier S1 `
+  --subnet-id $SUBNET_ID
+
+# Step 3: Agent Pool作成完了を待つ(3〜5分)
+while ($true) {
+    $status = az acr agentpool show `
+      --registry $ACR_NAME `
+      --name vnetpool `
+      --query "provisioningState" -o tsv
+    if ($status -eq "Succeeded") { 
+        Write-Host "✓ Agent Pool ready!" -ForegroundColor Green
+        break 
+    }
+    Write-Host "Status: $status - waiting..." -ForegroundColor Gray
+    Start-Sleep -Seconds 10
+}
+
+# Step 4: Agent Poolを使用してビルド
+az acr build `
+  --registry $ACR_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --agent-pool vnetpool `
+  --image github-runner:latest `
+  --image github-runner:v1.0.0 `
+  --file Dockerfile.runner `
+  .
+
+# Step 5 (オプション): ビルド完了後、Agent Poolを削除してコスト削減
+az acr agentpool delete --registry $ACR_NAME --name vnetpool --yes
+```
+
+**コスト最適化のヒント**:
+- オンデマンド運用: ビルド前に作成、ビルド後に削除 → 約$0.03〜$0.10/ビルド
+- 常時稼働: Agent Poolを維持 → $144/月 (運用が簡単)
+
+</details>
+
+<details>
+<summary><b>解決策2: ビルドエージェントIPを一時的に許可 (開発環境推奨)</b></summary>
+
+ACRのファイアウォールルールに、ビルドエージェントの実際のIPアドレスを一時的に追加します。
+
+**メリット**:
+- ✅ 追加コスト$0
+- ✅ シンプルで分かりやすい
+- ✅ 待ち時間なし
+
+**デメリット**:
+- ⚠️ ビルド中のみパブリックアクセスが有効(特定IP許可)
+- ⚠️ ビルドエージェントIPが変わる可能性
+
+**セキュリティ評価**:
+- 許可IP: 特定の1つのみ (Azure管理IP)
+- 公開期間: 5〜10分 (ビルド中のみ)
+- リスク: **開発環境としては許容範囲**
+
+**手順**:
+
+```powershell
+# Step 1: パブリックアクセスを一時的に有効化
+Write-Host "Enabling public access temporarily..." -ForegroundColor Yellow
+az acr update --name $ACR_NAME --public-network-enabled true
+
+# Step 2: ビルドエージェントIPを許可リストに追加
+# 
+# １度 Step 3: ビルド実行のコマンドを実施して、エラーメッセージを取得し、エラーメッセージに表示されたIPを使用します。おそらくIP１つではエラーが解消しないと思います。自己責任にはなりますが、CIDRでレンジ指定を推奨します
+$BUILD_AGENT_IP = "4.216.205.70"  # エラーメッセージから取得（レンジで指定する場合：4.216.205.0/24とする）
+az acr network-rule add --name $ACR_NAME --ip-address $BUILD_AGENT_IP
+Write-Host "✓ Added build agent IP: $BUILD_AGENT_IP" -ForegroundColor Green
+
+# Step 3: ビルド実行
+az acr build `
+  --registry $ACR_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --image github-runner:latest `
+  --image github-runner:v1.0.0 `
+  --file Dockerfile.runner `
+  .
+
+# Step 4: パブリックアクセスを無効化
+Write-Host "Disabling public access..." -ForegroundColor Yellow
+az acr update --name $ACR_NAME --public-network-enabled false
+Write-Host "✓ ACR secured again" -ForegroundColor Green
+```
+
+> 💡 **ヒント**: エラーメッセージに表示されるビルドエージェントIPは実行毎に異なる場合があります。その場合は、Step 2のIPアドレスを更新してください。実行中に複数のIPを利用している場合もありますので、状況にあわせてIPをCIDR指定ください。
+
+</details>
+
+---
+
+**通常のビルド手順 (ACRがパブリックアクセス可能な場合)**:
+
+```powershell
+# 基本的なビルド (latestタグのみ)
+az acr build `
+  --registry $ACR_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --image github-runner:latest `
+  --file Dockerfile.runner `
+  .
+
+# バージョンタグ付きビルド (推奨)
+az acr build `
+  --registry $ACR_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --image github-runner:latest `
+  --image github-runner:v1.0.0 `
+  --file Dockerfile.runner `
+  .
+```
+
+> **重要**: カレントディレクトリがリポジトリルート(`internal_rag_Application_sample_repo`)であることを確認してください
+
+#### ビルド状況の確認
+
+```powershell
+# ビルド履歴の確認(最新3件)
+az acr task list-runs `
+  --registry $ACR_NAME `
+  --top 3 `
+  -o table
+
+# 特定のビルドIDのステータス監視
+$buildId = "ce7"  # 実際のビルドIDに置き換え
+while ($true) {
+    $status = az acr task list-runs `
+      --registry $ACR_NAME `
+      --run-id $buildId `
+      --query "[0].status" `
+      -o tsv
+    Write-Host "Status: $status ($(Get-Date -Format 'HH:mm:ss'))"
+    if ($status -eq "Succeeded" -or $status -eq "Failed") { break }
+    Start-Sleep -Seconds 10
+}
+
+# イメージタグの確認
+az acr repository show-tags `
+  --name $ACR_NAME `
+  --repository github-runner `
+  --orderby time_desc `
+  --top 5 `
+  -o table
+```
+
+#### ベストプラクティス
+
+1. **バージョンタグの運用**: 
+   - `latest`タグのみではなく、`v1.2.0`などのセマンティックバージョニングを併用
+   - ロールバック時に特定バージョンを指定可能
+
+2. **ビルド前の動作確認**:
+   - ローカルでDockerイメージをビルドして動作確認
+   - `docker build -f Dockerfile.runner -t test-runner .`
+
+3. **定期的な更新**:
+   - ベースイメージ(`mcr.microsoft.com/cbl-mariner/base/core:2.0`)のセキュリティパッチ適用
+   - GitHub Runnerの最新バージョンへの更新(`RUNNER_VERSION`環境変数)
+
 ## 確認事項
 
 以下をすべて確認してください:
@@ -630,9 +968,12 @@ az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{R
 - ✅ 依存関係がインストールされている
 - ✅ `.env` ファイルが作成され、設定されている
 - ✅ Azureリソース情報が収集されている
+- ✅ ローカル開発用の権限が付与されている
+- ✅ Azure接続テストが成功している
 - ✅ GitHub Secretsが設定されている
 - ✅ Azure Functionsの環境変数が設定されている
-- ✅ Managed Identityの権限が付与されている
+- ✅ Azure Functions Managed Identityの権限が付与されている
+- ✅ **GitHub RunnerイメージがACRにビルドされている**
 
 ## トラブルシューティング
 
@@ -673,120 +1014,29 @@ az account set --subscription "<subscription-id>"
 - Azure Portal で自分のアカウントが「所有者」または「ユーザーアクセス管理者」ロールを持っているか確認
 - リソースグループレベルで権限を確認
 
-## GitHub Runnerイメージの作成・更新
+### GitHub Runnerイメージのビルドが失敗する
 
-このプロジェクトでは、GitHub ActionsでセルフホストランナーをAzure Container Instancesで動的に実行します。ランナー用のカスタムDockerイメージをAzure Container Registry (ACR) にビルド・保存する必要があります。
+#### ケース1: Private Endpoint構成のACRでアクセス拒否エラー
 
-### 対象ファイル
-
-- `Dockerfile.runner`: GitHub Runnerのコンテナイメージ定義
-- `start.sh`: ランナー起動スクリプト(ネットワーク診断・デバッグログ含む)
-
-### 初回ビルド vs 再ビルド
-
-| タイミング | 手順 | 説明 |
-|-----------|------|------|
-| **初回セットアップ時** | このドキュメントの手順に従う | Docker なしの基本 Runner イメージ |
-| **Docker 追加後** | [rebuild-runner-image.md](rebuild-runner-image.md) を参照 | Web App コンテナビルド用に Docker を追加 |
-
-> **Note**: Web App をコンテナ化してデプロイする場合は、Runner に Docker をインストールする必要があります。詳細は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
-
-### ACRビルドが必要なケース
-
-以下の場合、ACRで新しいイメージをビルドする必要があります:
-
-| シナリオ | ACRビルド必要 | 理由 |
-|---------|-------------|------|
-| `Dockerfile.runner`を修正 | ✅ 必要 | イメージの構成変更 |
-| `start.sh`を修正 | ✅ 必要 | 起動スクリプトがイメージに含まれる |
-| ベースイメージの更新 | ✅ 推奨 | セキュリティパッチ適用のため |
-| GitHub Runner バージョンアップ | ✅ 推奨 | 最新機能・修正を反映 |
-| ワークフローファイルのみ修正 | ❌ 不要 | イメージは変更なし |
-| 環境変数のみ変更 | ❌ 不要 | ランタイムで設定される |
-
-### 初回ビルドコマンド
-
-> **Note**: 初回セットアップ時は以下のコマンドを使用してください。Docker を追加した再ビルドの場合は [rebuild-runner-image.md](rebuild-runner-image.md) を参照してください。
-
-### ACR パブリックアクセスの一時的な有効化
-
-ACR Tasks でビルドする場合、ビルドエージェントがパブリック IP からアクセスするため、一時的にパブリックアクセスを許可する必要があります:
-
-```powershell
-# 1. パブリックアクセスを有効化
-az acr update --name acrinternalragdev --public-network-enabled true --default-action Allow
-
-# 2. 設定が反映されるまで待機
-Start-Sleep -Seconds 30
+**症状**: 
+```
+failed to login: Error response from daemon: 
+Get "https://acrinternalragdev.azurecr.io/v2/": denied: 
+client with IP 'x.x.x.x' is not allowed access.
 ```
 
-### ビルドコマンド
+**原因**: ACRがPrivate Endpointのみで構成されており、ビルドエージェント(Azure管理のパブリックIP環境)からアクセスできない
 
-```powershell
-# 基本的なビルド (latestタグのみ)
-az acr build `
-  --registry acrinternalragdev `
-  --resource-group rg-internal-rag-dev `
-  --image github-runner:latest `
-  --file Dockerfile.runner `
-  .
+**対処法**: Step 10の「イメージのビルド」セクションにある**解決策1または解決策2**を参照してください
 
-# バージョンタグ付きビルド (推奨)
-az acr build `
-  --registry acrinternalragdev `
-  --resource-group rg-internal-rag-dev `
-  --image github-runner:latest `
-  --image github-runner:v1.0.0 `
-  --file Dockerfile.runner `
-  .
-
-# ACR パブリックアクセスを無効化（セキュリティ強化）
-az acr update --name acrinternalragdev --public-network-enabled false --default-action Deny
-```
-
-**重要**: カレントディレクトリがリポジトリルート(`internal_rag_Application_sample_repo`)であることを確認してください。
-
-### ビルド状況の確認
-
-```powershell
-# ビルド履歴の確認(最新3件)
-az acr task list-runs `
-  --registry acrinternalragdev `
-  --top 3 `
-  -o table
-
-# 特定のビルドIDのステータス監視
-$buildId = "ce7"  # 実際のビルドIDに置き換え
-while ($true) {
-    $status = az acr task list-runs `
-      --registry acrinternalragdev `
-      --run-id $buildId `
-      --query "[0].status" `
-      -o tsv
-    Write-Host "Status: $status ($(Get-Date -Format 'HH:mm:ss'))"
-    if ($status -eq "Succeeded" -or $status -eq "Failed") { break }
-    Start-Sleep -Seconds 10
-}
-
-# イメージタグの確認
-az acr repository show-tags `
-  --name acrinternalragdev `
-  --repository github-runner `
-  --orderby time_desc `
-  --top 5 `
-  -o table
-```
-
-### トラブルシューティング
-
-#### ビルドが失敗する
+#### ケース2: その他のビルドエラー
 
 **症状**: `az acr build` コマンドがエラーで終了
 
 **対処法**:
 ```powershell
 # ビルドログの確認
-az acr task logs --registry acrinternalragdev --run-id <build-id>
+az acr task logs --registry $ACR_NAME --run-id <build-id>
 
 # よくあるエラー:
 # - "unknown instruction: SET" → Dockerfileの構文エラー(heredoc非対応)
@@ -794,7 +1044,7 @@ az acr task logs --registry acrinternalragdev --run-id <build-id>
 # - "permission denied" → COPY/CHOWNの権限問題
 ```
 
-#### イメージがプルできない
+### GitHub Runnerイメージがプルできない
 
 **症状**: Container Instancesでイメージプルに失敗
 
@@ -802,20 +1052,6 @@ az acr task logs --registry acrinternalragdev --run-id <build-id>
 - ACRでPrivate Endpointが有効化されているか確認
 - Container InstancesでUser Assigned Managed Identityが設定されているか確認(`--acr-identity`パラメータ)
 - NSGでHTTPS(443)のアウトバウンドが許可されているか確認
-
-### ベストプラクティス
-
-1. **バージョンタグの運用**: 
-   - `latest`タグのみではなく、`v1.2.0`などのセマンティックバージョニングを併用
-   - ロールバック時に特定バージョンを指定可能
-
-2. **ビルド前の動作確認**:
-   - ローカルでDockerイメージをビルドして動作確認
-   - `docker build -f Dockerfile.runner -t test-runner .`
-
-3. **定期的な更新**:
-   - ベースイメージ(`mcr.microsoft.com/cbl-mariner/base/core:2.0`)のセキュリティパッチ適用
-   - GitHub Runnerの最新バージョンへの更新(`RUNNER_VERSION`環境変数)
 
 ## 次のステップ
 
