@@ -260,6 +260,9 @@
             chatArea.scrollTop = chatArea.scrollHeight;
         }
 
+        // Azure FunctionsのエンドポイントURL
+        const FUNCTIONS_ENDPOINT = 'https://func-internal-rag-dev.azurewebsites.net';
+
         async function sendMessage() {
             const message = messageInput.value.trim();
             
@@ -274,7 +277,8 @@
             sendButton.innerHTML = '<span class="loading"></span>';
             
             try {
-                const response = await fetch('/api/chat', {
+                // Azure Functionsのエンドポイントを呼び出す
+                const response = await fetch(`${FUNCTIONS_ENDPOINT}/api/chat`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
