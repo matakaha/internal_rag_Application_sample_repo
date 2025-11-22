@@ -60,5 +60,5 @@ RUN chmod +x /start.sh
 # Docker socket用のディレクトリを作成
 RUN mkdir -p /var/run
 
-# rootユーザーのままエントリーポイントを実行（Dockerデーモン起動のため）
-ENTRYPOINT ["/start.sh"]
+# rootユーザーのままエントリーポイントを実行(Dockerデーモン起動のため)
+ENTRYPOINT ["/bin/bash", "/start.sh"]

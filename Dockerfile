@@ -1,6 +1,6 @@
-# Node.js 18 Alpine イメージを使用（軽量）
-# 閉域環境のためACRから取得
-FROM acrinternalragdev.azurecr.io/node:18-alpine
+# Node.js 18 Alpine イメージを使用(軽量)
+# GitHub ホストランナーはインターネットアクセスがあるため、Docker Hubから直接取得
+FROM node:18-alpine
 
 # 作業ディレクトリを設定
 WORKDIR /app
